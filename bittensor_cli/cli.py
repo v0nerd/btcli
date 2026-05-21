@@ -3886,7 +3886,8 @@ class CLIManager:
 
         if prompt:
             if not confirm_action(
-                "Cost to register an [blue]Identity[/blue] is [blue]0.1 TAO[/blue],"
+                "Cost to register an [blue]Identity[/blue] is the extrinsic fee "
+                "(typically [blue]<0.001 TAO[/blue]),"
                 " are you sure you wish to continue?",
                 decline=decline,
                 quiet=quiet,
