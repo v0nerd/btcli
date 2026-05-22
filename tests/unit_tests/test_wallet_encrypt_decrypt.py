@@ -132,9 +132,7 @@ class TestDecryptMessage:
             patch(f"{MODULE}.unlock_key", return_value=unlock_result) as mock_unlock,
             patch(f"{MODULE}.json_console"),
         ):
-            await decrypt_message(
-                mock_wallet, "00", use_hotkey=True, json_output=True
-            )
+            await decrypt_message(mock_wallet, "00", use_hotkey=True, json_output=True)
         # unlock_key called with "hot" not "cold"
         assert mock_unlock.call_args[0][1] == "hot"
         mock_wallet.hotkey.decrypt.assert_called_once()
