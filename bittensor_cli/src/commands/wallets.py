@@ -2163,9 +2163,7 @@ async def decrypt_message(
 ):
     """Decrypt a hex-encoded ciphertext with the wallet's ED25519 keypair."""
     try:
-        ciphertext = bytes.fromhex(
-            ciphertext_hex.strip().lower().removeprefix("0x")
-        )
+        ciphertext = bytes.fromhex(ciphertext_hex.strip().lower().removeprefix("0x"))
     except ValueError as e:
         err = f"Invalid ciphertext hex: {e}"
         if json_output:
