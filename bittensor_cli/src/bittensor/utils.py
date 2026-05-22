@@ -1550,6 +1550,31 @@ def validate_uri(uri: str) -> str:
     return f"//{clean_uri.capitalize()}"
 
 
+# TODO when 3.10 support is dropped in Oct 2026, switch to enum.StrEnum directly
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from enum import Enum
+
+    class StrEnum(str, Enum):
+        pass
+
+
+class CryptoType(StrEnum):
+    SR25519 = "sr25519"
+    ED25519 = "ed25519"
+
+
+def crypto_type_to_int(value: CryptoType) -> int:
+    """Map a CryptoType enum to the bittensor_wallet crypto_type int constant."""
+    from bittensor_wallet import CRYPTO_ED25519, CRYPTO_SR25519
+
+    return {
+        CryptoType.SR25519: CRYPTO_SR25519,
+        CryptoType.ED25519: CRYPTO_ED25519,
+    }[value]
+
+
 def get_effective_network(config, network: Optional[list[str]]) -> str:
     """
     Determines the effective network to be used, considering the network parameter,
