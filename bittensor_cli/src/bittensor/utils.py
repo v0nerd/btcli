@@ -16,7 +16,7 @@ import re
 
 import aiohttp
 from async_substrate_interface import AsyncExtrinsicReceipt
-from bittensor_wallet import Wallet, Keypair
+from bittensor_wallet import Wallet, Keypair, CRYPTO_ED25519, CRYPTO_SR25519
 from bittensor_wallet.utils import SS58_FORMAT
 from bittensor_wallet.errors import KeyFileError, PasswordError
 from bittensor_wallet import utils
@@ -1567,7 +1567,6 @@ class CryptoType(StrEnum):
 
 def crypto_type_to_int(value: CryptoType) -> int:
     """Map a CryptoType enum to the bittensor_wallet crypto_type int constant."""
-    from bittensor_wallet import CRYPTO_ED25519, CRYPTO_SR25519
 
     return {
         CryptoType.SR25519: CRYPTO_SR25519,
