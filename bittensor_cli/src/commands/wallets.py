@@ -511,7 +511,12 @@ async def wallet_create(
 
     if uri:
         try:
-            # URI creates a single keypair shared by cold/hot; only one crypto_type can apply.
+            err = "Cannot use different crypto types with `wallet create --uri`: \nSince it derives a single keypair used by both the coldkey and hotkey"
+                print_error(err)
+                output_dict["error"] = err
+                if json_output:
+                    json_console.print(json.dumps(output_dict))
+                return
             keypair = Keypair.create_from_uri(uri, crypto_type=coldkey_crypto_type)
             wallet.set_coldkey(keypair=keypair, encrypt=False, overwrite=overwrite)
             wallet.set_coldkeypub(keypair=keypair, encrypt=False, overwrite=overwrite)
