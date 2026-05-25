@@ -4113,6 +4113,14 @@ class CLIManager:
             "-p",
             help="SS58 address or public key (hex) of the signer",
         ),
+        crypto_type: Optional[CryptoType] = typer.Option(
+            None,
+            "--crypto-type",
+            help=(
+                "Cryptographic scheme used to produce the signature. "
+                "If omitted, both sr25519 and ed25519 are tried."
+            ),
+        ),
         quiet: bool = Options.quiet,
         verbose: bool = Options.verbose,
         json_output: bool = Options.json_output,
@@ -4125,13 +4133,15 @@ class CLIManager:
         USAGE
 
         Provide the original message, the signature (in hex format), and either the SS58 address
-        or public key of the signer to verify the signature.
+        or public key of the signer to verify the signature. If you know which cryptographic scheme
+        was used, pass --crypto-type; otherwise both sr25519 and ed25519 are tried automatically and
+        the matching scheme is reported.
 
         EXAMPLES
 
         [green]$[/green] btcli wallet verify --message "Hello world" --signature "0xabc123..." --address "5GrwvaEF..."
 
-        [green]$[/green] btcli wallet verify -m "Test message" -s "0xdef456..." -p "0x1234abcd..."
+        [green]$[/green] btcli wallet verify -m "Test message" -s "0xdef456..." -p "0x1234abcd..." --crypto-type ed25519
         """
         self.verbosity_handler(quiet, verbose, json_output, False)
 
@@ -4147,7 +4157,9 @@ class CLIManager:
             signature = Prompt.ask("Enter the [blue]signature[/blue]")
 
         return self._run_command(
-            wallets.verify(message, signature, public_key_or_ss58, json_output)
+            wallets.verify(
+                message, signature, public_key_or_ss58, crypto_type, json_output
+            )
         )
 
     def wallet_encrypt(

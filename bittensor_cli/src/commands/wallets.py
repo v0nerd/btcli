@@ -33,8 +33,10 @@ from bittensor_cli.src.bittensor.networking import int_to_ip
 from bittensor_cli.src.bittensor.subtensor_interface import SubtensorInterface
 from bittensor_cli.src.bittensor.utils import (
     RAO_PER_TAO,
+    CryptoType,
     confirm_action,
     console,
+    crypto_type_to_int,
     json_console,
     print_error,
     print_verbose,
@@ -511,7 +513,11 @@ async def wallet_create(
 
     if uri:
         try:
-            err = "Cannot use different crypto types with `wallet create --uri`: \nSince it derives a single keypair used by both the coldkey and hotkey"
+            if coldkey_crypto_type != hotkey_crypto_type:
+                err = (
+                    "Cannot use different crypto types with `wallet create --uri`: \n"
+                    "Since it derives a single keypair used by both the coldkey and hotkey"
+                )
                 print_error(err)
                 output_dict["error"] = err
                 if json_output:
@@ -2040,30 +2046,30 @@ async def verify(
     message: str,
     signature: str,
     public_key_or_ss58: str,
+    crypto_type: Optional[CryptoType] = None,
     json_output: bool = False,
 ):
-    """Verify a message signature using a public key or SS58 address."""
+    """Verify a message signature using a public key or SS58 address.
 
-    if is_valid_ss58_address(public_key_or_ss58):
+    If ``crypto_type`` is ``None``, both SR25519 and ED25519 are tried and the
+    matching scheme (if any) is reported back to the user.
+    """
+
+    use_ss58 = is_valid_ss58_address(public_key_or_ss58)
+    public_key_hex: Optional[str] = None
+    if use_ss58:
         print_verbose(f"[blue]SS58 address detected:[/blue] {public_key_or_ss58}")
-        keypair = Keypair(ss58_address=public_key_or_ss58)
-        signer_address = public_key_or_ss58
+        signer_address: Optional[str] = public_key_or_ss58
     else:
         try:
             public_key_hex = public_key_or_ss58.strip().lower()
             if public_key_hex.startswith("0x"):
                 public_key_hex = public_key_hex[2:]
-            if len(public_key_hex) == 64:
-                bytes.fromhex(public_key_hex)
-                print_verbose("[blue]Hex public key detected[/blue] (64 characters)")
-                keypair = Keypair(public_key=public_key_hex)
-                signer_address = keypair.ss58_address
-                print_verbose(
-                    f"[blue]Corresponding SS58 address:[/blue] {signer_address}"
-                )
-            else:
+            if len(public_key_hex) != 64:
                 raise ValueError("Public key must be 32 bytes (64 hex characters)")
-
+            bytes.fromhex(public_key_hex)
+            print_verbose("[blue]Hex public key detected[/blue] (64 characters)")
+            signer_address = None
         except (ValueError, TypeError) as e:
             if json_output:
                 json_console.print(
@@ -2096,20 +2102,51 @@ async def verify(
             print_error(f"Invalid signature format: {str(e)}")
         return False
 
-    is_valid = keypair.verify(message.encode("utf-8"), signature_bytes)
+    candidates = (
+        [crypto_type]
+        if crypto_type is not None
+        else [CryptoType.SR25519, CryptoType.ED25519]
+    )
+
+    is_valid = False
+    matched_type: Optional[CryptoType] = None
+    message_bytes = message.encode("utf-8")
+    for ct in candidates:
+        ct_int = crypto_type_to_int(ct)
+        if use_ss58:
+            kp = Keypair(ss58_address=public_key_or_ss58, crypto_type=ct_int)
+        else:
+            kp = Keypair(public_key=public_key_hex, crypto_type=ct_int)
+        if signer_address is None:
+            signer_address = kp.ss58_address
+            print_verbose(f"[blue]Corresponding SS58 address:[/blue] {signer_address}")
+        if kp.verify(message_bytes, signature_bytes):
+            is_valid = True
+            matched_type = ct
+            break
 
     if json_output:
-        json_console.print(
-            json.dumps(
-                {"verified": is_valid, "signer": signer_address, "message": message}
-            )
-        )
+        payload = {
+            "verified": is_valid,
+            "signer": signer_address,
+            "message": message,
+        }
+        if matched_type is not None:
+            payload["crypto_type"] = matched_type.value
+        json_console.print(json.dumps(payload))
     else:
         if is_valid:
             console.print("[dark_sea_green3]Signature is valid!\n")
             console.print(f"[yellow]Signer:[/yellow] {signer_address}")
+            assert matched_type is not None
+            console.print(f"[yellow]Crypto type:[/yellow] {matched_type.value}")
         else:
-            print_error("Signature verification failed!")
+            if crypto_type is None:
+                print_error(
+                    "Signature verification failed for both sr25519 and ed25519."
+                )
+            else:
+                print_error(f"Signature verification failed for {crypto_type.value}.")
 
     return is_valid
 
