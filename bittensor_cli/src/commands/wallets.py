@@ -36,6 +36,8 @@ from bittensor_cli.src.bittensor.utils import (
     CryptoType,
     confirm_action,
     console,
+    crypto_type_from_int,
+    crypto_type_tag,
     crypto_type_to_int,
     json_console,
     print_error,
@@ -906,22 +908,28 @@ async def wallet_list(
     root = Tree("Wallets")
     main_data_dict = {"wallets": []}
     for wallet in wallets:
+        coldkey_crypto: Optional[CryptoType] = None
         if (
             wallet.coldkeypub_file.exists_on_device()
             and os.path.isfile(wallet.coldkeypub_file.path)
             and not wallet.coldkeypub_file.is_encrypted()
         ):
             coldkeypub_str = wallet.coldkeypub.ss58_address
+            coldkey_crypto = crypto_type_from_int(wallet.coldkeypub.crypto_type)
+            coldkey_tag = f" {crypto_type_tag(wallet.coldkeypub.crypto_type)}"
         else:
             coldkeypub_str = "?"
+            coldkey_tag = ""
 
         wallet_tree = root.add(
-            f"[bold blue]Coldkey[/bold blue] [green]{wallet.name}[/green]  ss58_address [green]{coldkeypub_str}[/green]"
+            f"[bold blue]Coldkey[/bold blue] [green]{wallet.name}[/green]  "
+            f"ss58_address [green]{coldkeypub_str}[/green]{coldkey_tag}"
         )
         wallet_hotkeys = []
         wallet_dict = {
             "name": wallet.name,
             "ss58_address": coldkeypub_str,
+            "crypto_type": coldkey_crypto.value if coldkey_crypto else None,
             "hotkeys": wallet_hotkeys,
         }
         main_data_dict["wallets"].append(wallet_dict)
@@ -930,21 +938,31 @@ async def wallet_list(
         )
         for hkey in hotkeys:
             data = f"[bold red]Hotkey[/bold red][green] {hkey}[/green] (?)"
-            hk_data = {"name": hkey.name, "ss58_address": "?"}
+            hk_data = {"name": hkey.name, "ss58_address": "?", "crypto_type": None}
             if hkey:
                 try:
-                    hkey_ss58 = hkey.get_hotkey().ss58_address
+                    keypair = hkey.get_hotkey()
+                    hkey_ss58 = keypair.ss58_address
+                    hk_crypto_int: Optional[int] = keypair.crypto_type
                     pub_only = False
                 except KeyFileError:
-                    hkey_ss58 = hkey.get_hotkeypub().ss58_address
+                    keypair = hkey.get_hotkeypub()
+                    hkey_ss58 = keypair.ss58_address
+                    hk_crypto_int = keypair.crypto_type
                     pub_only = True
                 except AttributeError:
                     hkey_ss58 = hkey.hotkey.ss58_address
+                    hk_crypto_int = getattr(hkey.hotkey, "crypto_type", None)
                     pub_only = False
                 try:
+                    crypto_suffix = (
+                        f" {crypto_type_tag(hk_crypto_int)}"
+                        if hk_crypto_int is not None
+                        else ""
+                    )
                     data = (
                         f"[bold red]Hotkey[/bold red] [green]{hkey.hotkey_str}[/green]  "
-                        f"ss58_address [green]{hkey_ss58}[/green]"
+                        f"ss58_address [green]{hkey_ss58}[/green]{crypto_suffix}"
                     )
                     if pub_only:
                         data += " [blue](hotkeypub only)[/blue]\n"
@@ -952,6 +970,9 @@ async def wallet_list(
                         data += "\n"
                     hk_data["name"] = hkey.hotkey_str
                     hk_data["ss58_address"] = hkey_ss58
+                    if hk_crypto_int is not None:
+                        ct = crypto_type_from_int(hk_crypto_int)
+                        hk_data["crypto_type"] = ct.value if ct else None
                 except UnicodeDecodeError:
                     pass
             wallet_tree.add(data)
