@@ -6612,7 +6612,7 @@ class CLIManager:
         Inspect the wallet's locks on netuid 1:
             [green]$[/green] btcli stake lock list --netuid 1
         """
-        self.verbosity_handler(quiet, verbose, json_output)
+        self.verbosity_handler(quiet, verbose, json_output, prompt=False)
 
         if coldkey_ss58 is not None:
             if not is_valid_ss58_address(coldkey_ss58):
@@ -6660,7 +6660,7 @@ class CLIManager:
         Just the subnet king on netuid 1:
             [green]$[/green] btcli stake lock conviction --netuid 1
         """
-        self.verbosity_handler(quiet, verbose, json_output)
+        self.verbosity_handler(quiet, verbose, json_output, prompt=False)
         if hotkey_ss58 is not None and not is_valid_ss58_address(hotkey_ss58):
             print_error(f"Invalid hotkey ss58 address: {hotkey_ss58}")
             raise typer.Exit(1)
