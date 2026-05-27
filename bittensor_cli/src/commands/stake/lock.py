@@ -63,7 +63,7 @@ async def get_stake_locks(
         params=[coldkey_ss58, netuid],
         block_hash=block_hash,
         fully_exhaust=True,
-        page_size=200,
+        page_size=1_000,
     )
     locks: list[tuple[str, LockState]] = []
     for hotkey, lock_state in query_map.records:
