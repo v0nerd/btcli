@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 
+import plotille
 from bittensor_wallet import Wallet
+from rich.text import Text
 
 from bittensor_cli.src import COLORS
 from bittensor_cli.src.bittensor.balances import Balance
 from bittensor_cli.src.bittensor.chain_data import ColdkeySubnetLock
 from bittensor_cli.src.bittensor.locks import LockState, roll_forward_lock
 from bittensor_cli.src.bittensor.utils import (
+    console,
     print_error,
     print_extrinsic_id,
     print_success,
@@ -69,6 +73,79 @@ def rolled_existing_lock(
         owner_lock=owner_lock,
         perpetual_lock=existing.is_perpetual,
     )
+
+
+def print_lock_projection_graph(
+    netuid: int,
+    projected_locked_rao: dict[int, int],
+    projected_conviction: dict[int, Decimal],
+    targets_owner_hotkey: bool,
+    hint: Optional[str] = "use --no-graph to hide",
+) -> None:
+    days = sorted(projected_locked_rao)
+    locked = [_alpha_float(projected_locked_rao[day]) for day in days]
+    conviction = [_alpha_float(projected_conviction[day]) for day in days]
+
+    max_y = max(locked + conviction)
+    if max_y <= 0:
+        return
+
+    fig = plotille.Figure()
+    fig.width = 60
+    fig.height = 9
+    fig.color_mode = "rgb"
+    fig.background = None
+    fig.origin = False
+    fig.x_label = plotille.color("Days", fg=(186, 233, 143), mode="rgb")
+    fig.y_label = plotille.color(
+        f"Alpha ({Balance.get_unit(netuid)})",
+        fg=(186, 233, 143),
+        mode="rgb",
+    )
+    fig.x_ticks_fkt = lambda value, _next_value: f"{value:.0f}"
+    fig.y_ticks_fkt = _graph_tick
+    fig.set_x_limits(min_=0, max_=365)
+    fig.set_y_limits(min_=0, max_=max_y * 1.05)
+
+    if targets_owner_hotkey:
+        fig.plot(
+            days,
+            locked,
+            label="Locked = Conviction",
+            interp="linear",
+            lc="ffd166",
+        )
+    else:
+        fig.plot(days, locked, label="Locked", interp="linear", lc="d09fe9")
+        fig.plot(days, conviction, label="Conviction", interp="linear", lc="afefff")
+
+    hint_text = f" [dim]({hint})[/dim]" if hint else ""
+    console.print(
+        f"\n[{COLORS.G.HEADER}]Lock projection[/{COLORS.G.HEADER}]{hint_text}"
+    )
+    console.print(Text.from_ansi(fig.show(legend=True)))
+
+    if targets_owner_hotkey:
+        console.print(
+            "[dim]Owner hotkey target: one line represents both locked alpha "
+            "and conviction.[/dim]"
+        )
+
+    console.print()
+
+
+def _alpha_float(rao: int | Decimal) -> float:
+    return float(Balance.from_rao(int(rao)).tao)
+
+
+def _graph_tick(value: float, _next_value: float) -> str:
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    if abs(value) >= 100:
+        return f"{value:.0f}"
+    if abs(value) >= 10:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
 
 
 async def get_subnet_owner_hotkey(
