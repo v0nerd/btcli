@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import sqlite3
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, cast
@@ -3242,9 +3243,11 @@ async def subnet_conviction(
         f"\n  Top hotkey: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
         f"{king_cell}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
     )
+    unlock_half_life = blocks_to_duration(int(unlock_rate * math.log(2)))
+    maturity_half_life = blocks_to_duration(int(maturity_rate * math.log(2)))
     console.print(
         "\n[dim]Lock decay context:"
-        "\n    UnlockRate ≈ 1y for 90%;"
-        "\n    MaturityRate ≈ 30d to 95%.[/dim]"
+        f"\n    UnlockRate half-life ≈ {unlock_half_life};"
+        f"\n    MaturityRate half-life ≈ {maturity_half_life}.[/dim]"
     )
     return None

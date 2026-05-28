@@ -20,8 +20,8 @@ from bittensor_cli.src.bittensor.locks import (
 
 
 # Subtensor defaults (lock.rs::DefaultUnlockRate / DefaultMaturityRate)
-DEFAULT_UNLOCK_RATE = 1_142_108
-DEFAULT_MATURITY_RATE = 216_000
+DEFAULT_UNLOCK_RATE = 934_866
+DEFAULT_MATURITY_RATE = 934_866
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ def test_exp_decay_both_zero_returns_one():
 
 def test_exp_decay_one_full_tau_matches_e_inverse():
     # exp_decay(tau, tau) == exp(-1) ≈ 0.36788
-    result = exp_decay(1_142_108, 1_142_108)
+    result = exp_decay(DEFAULT_UNLOCK_RATE, DEFAULT_UNLOCK_RATE)
     assert abs(float(result) - math.exp(-1)) < 1e-9
 
 
