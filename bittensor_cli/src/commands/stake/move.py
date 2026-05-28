@@ -601,18 +601,22 @@ async def move_stake(
     # rather than as a separate sequential RPC.
     block_hash = await subtensor.substrate.get_chain_head()
     is_cross_subnet = origin_netuid != destination_netuid
-    hotkey_existence, coldkey_stakes = await asyncio.gather(
+
+    async def _none():
+        return None
+
+    (
+        hotkey_existence,
+        coldkey_stakes,
+        origin_lock,
+    ) = await asyncio.gather(
         subtensor.do_hotkeys_exist(
             [origin_hotkey, destination_hotkey], block_hash=block_hash
         ),
         subtensor.get_stake_for_coldkey(coldkey_ss58, block_hash=block_hash),
-    )
-    origin_lock = (
-        await subtensor.get_coldkey_lock(
-            coldkey_ss58, origin_netuid, block_hash=block_hash
-        )
+        subtensor.get_coldkey_lock(coldkey_ss58, origin_netuid, block_hash=block_hash)
         if is_cross_subnet
-        else None
+        else _none(),
     )
     coldkey_stakes = coldkey_stakes or []
     origin_stake_balance = _stake_on(coldkey_stakes, origin_hotkey, origin_netuid)
