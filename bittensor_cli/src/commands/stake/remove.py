@@ -74,6 +74,20 @@ async def unstake(
             subtensor.get_stake_for_coldkey(coldkey_ss58, block_hash=chain_head),
         )
         all_sn_dynamic_info = {info.netuid: info for info in all_sn_dynamic_info_}
+        netuids_to_check = sorted(
+            {int(stake.netuid) for stake in stake_infos if int(stake.stake.rao) > 0}
+        )
+        lock_results = await asyncio.gather(
+            *[
+                subtensor.get_coldkey_lock(coldkey_ss58, netuid_, block_hash=chain_head)
+                for netuid_ in netuids_to_check
+            ]
+        )
+        locks_by_netuid = {
+            netuid_: lock
+            for netuid_, lock in zip(netuids_to_check, lock_results)
+            if lock is not None and lock.locked_mass > 0
+        }
 
     if interactive:
         try:
@@ -81,6 +95,7 @@ async def unstake(
                 all_sn_dynamic_info,
                 ck_hk_identities,
                 stake_infos,
+                locks_by_netuid=locks_by_netuid,
                 netuid=netuid,
             )
         except ValueError:
@@ -169,6 +184,14 @@ async def unstake(
                 stake_info.stake
             )
 
+    subnet_total_rao: dict[int, int] = {}
+    for stake_info in stake_infos:
+        nid = int(stake_info.netuid)
+        subnet_total_rao[nid] = subnet_total_rao.get(nid, 0) + int(stake_info.stake.rao)
+
+    # Tally of alpha already allocated
+    consumed_per_netuid: dict[int, int] = {}
+
     # Flag to check if user wants to quit
     skip_remaining_subnets = False
     if len(netuids) > 1 and not amount:
@@ -213,12 +236,36 @@ async def unstake(
                 )
                 continue  # No stake to unstake
 
+            # Budget is (total coldkey alpha on the subnet − rolled locked_mass),
+            lock = locks_by_netuid.get(netuid)
+            locked_rao = lock.locked_mass if lock is not None else 0
+            if lock is not None:
+                subnet_available = max(0, subnet_total_rao.get(netuid, 0) - locked_rao)
+                remaining = max(
+                    0, subnet_available - consumed_per_netuid.get(netuid, 0)
+                )
+                available_rao = min(int(current_stake_balance.rao), remaining)
+
+            else:
+                available_rao = int(current_stake_balance.rao)
+            available_balance = Balance.from_rao(available_rao).set_unit(netuid)
+
+            # Lock leaves nothing unstakable on this subnet, skip the row.
+            if available_rao == 0 and lock is not None:
+                print_error(
+                    f"Nothing to unstake from {staking_address_ss58} on "
+                    f"netuid {netuid}: the subnet-wide lock leaves no "
+                    f"available alpha here."
+                )
+                continue
+
             # Determine the amount we are unstaking.
             if initial_amount:
                 amount_to_unstake_as_balance = Balance.from_tao(initial_amount)
             else:
                 amount_to_unstake_as_balance = _ask_unstake_amount(
                     current_stake_balance,
+                    available_balance,
                     netuid,
                     staking_address_name
                     if staking_address_name
@@ -231,13 +278,21 @@ async def unstake(
 
             # Check enough stake to remove.
             amount_to_unstake_as_balance.set_unit(netuid)
-            if amount_to_unstake_as_balance > current_stake_balance:
-                print_error(
-                    f"Not enough stake to remove:\n"
-                    f" Stake balance: [dark_orange]{current_stake_balance}[/dark_orange]"
-                    f" < Unstaking amount: [dark_orange]{amount_to_unstake_as_balance}[/dark_orange]"
-                    f" on netuid: {netuid}"
-                )
+            if amount_to_unstake_as_balance > available_balance:
+                if lock is not None:
+                    locked_balance = Balance.from_rao(locked_rao).set_unit(netuid)
+                    print_error(
+                        f"Can't unstake {amount_to_unstake_as_balance} from "
+                        f"netuid {netuid}: only {available_balance} available — "
+                        f"a subnet-wide lock of {locked_balance} applies across "
+                        f"your stake on this subnet."
+                    )
+                else:
+                    print_error(
+                        f"Not enough stake to unstake "
+                        f"{amount_to_unstake_as_balance} from netuid {netuid}: "
+                        f"you have {current_stake_balance}."
+                    )
                 continue  # Skip to the next subnet - useful when single amount is specified for all subnets
 
             try:
@@ -331,6 +386,9 @@ async def unstake(
 
             unstake_operations.append(base_unstake_op)
             table_rows.append(base_table_row)
+            consumed_per_netuid[netuid] = consumed_per_netuid.get(netuid, 0) + int(
+                amount_to_unstake_as_balance.rao
+            )
 
     if not unstake_operations:
         console.print("[red]No unstake operations to perform.[/red]")
@@ -1253,6 +1311,7 @@ async def _unstake_selection(
     dynamic_info,
     identities,
     stake_infos,
+    locks_by_netuid: dict,
     netuid: Optional[int] = None,
 ) -> tuple[list[tuple[str, str, int]], bool]:
     if not stake_infos:
@@ -1322,6 +1381,8 @@ async def _unstake_selection(
     netuid_stakes = hotkey_stakes[selected_hotkey_ss58]
 
     # Display hotkey's staked netuids with amount.
+
+    any_locked = any(netuid_ in locks_by_netuid for netuid_ in netuid_stakes)
     table = create_table(
         title=f"\n[{COLOR_PALETTE['GENERAL']['HEADER']}]Stakes for hotkey \n"
         f"[{COLOR_PALETTE['GENERAL']['SUBHEADING']}]{selected_hotkey_name}\n"
@@ -1329,7 +1390,10 @@ async def _unstake_selection(
     )
     table.add_column("Subnet", justify="right")
     table.add_column("Symbol", style=COLOR_PALETTE["GENERAL"]["SYMBOL"])
-    table.add_column("Stake Amount", style=COLOR_PALETTE["STAKE"]["STAKE_AMOUNT"])
+    table.add_column("Stake Amount", style=COLOR_PALETTE["POOLS"]["ALPHA_IN"])
+    if any_locked:
+        table.add_column("Locked", style=COLOR_PALETTE["POOLS"]["ALPHA_IN"])
+        table.add_column("Available", style=COLOR_PALETTE["STAKE"]["STAKE_AMOUNT"])
     table.add_column(
         f"[bold white]Rate ({Balance.get_unit(0)}/{Balance.get_unit(1)})",
         style=COLOR_PALETTE["POOLS"]["RATE"],
@@ -1339,7 +1403,24 @@ async def _unstake_selection(
     for netuid_, stake_amount in netuid_stakes.items():
         symbol = dynamic_info[netuid_].symbol
         rate = f"{dynamic_info[netuid_].price.tao:.6f} τ/{symbol}"
-        table.add_row(str(netuid_), symbol, str(stake_amount), rate)
+        row = [str(netuid_), symbol, str(stake_amount)]
+        if any_locked:
+            lock = locks_by_netuid.get(netuid_)
+            if lock is not None:
+                locked_b = lock.locked_balance(netuid_)
+                available_rao = max(0, int(stake_amount.rao) - lock.locked_mass)
+                available_b = Balance.from_rao(available_rao).set_unit(netuid_)
+
+                available_cell = (
+                    f"[dim]{available_b}[/dim]"
+                    if available_rao == 0
+                    else str(available_b)
+                )
+                row.extend([str(locked_b), available_cell])
+            else:
+                row.extend(["—", str(stake_amount)])
+        row.append(rate)
+        table.add_row(*row)
     console.print("\n", table, "\n")
 
     # Ask which netuids to unstake from for the selected hotkey.
@@ -1385,6 +1466,7 @@ async def _unstake_selection(
 
 def _ask_unstake_amount(
     current_stake_balance: Balance,
+    available_balance: Balance,
     netuid: int,
     staking_address_name: str,
     staking_address_ss58: str,
@@ -1392,7 +1474,11 @@ def _ask_unstake_amount(
     """Prompt the user to decide the amount to unstake.
 
     Args:
-        current_stake_balance: The current stake balance available to unstake
+        current_stake_balance: Total stake the user holds on this (hotkey, netuid).
+        available_balance: How much of this position is unstakable now — capped
+            by the coldkey's subnet-wide lock budget (and any amount already
+            allocated to this subnet earlier in the session). Equals
+            current_stake_balance when unconstrained.
         netuid: The subnet ID
         staking_address_name: Display name of the staking address
         staking_address_ss58: SS58 address of the staking address
@@ -1405,9 +1491,12 @@ def _ask_unstake_amount(
         staking_address_name if staking_address_name else staking_address_ss58
     )
 
-    # First prompt: Ask if user wants to unstake all
+    is_constrained = available_balance.rao < current_stake_balance.rao
+
+    # First prompt: Ask if user wants to unstake the full available amount.
+    unstake_all_label = "Unstake all available" if is_constrained else "Unstake all"
     unstake_all_prompt = (
-        f"Unstake all: [{stake_color}]{current_stake_balance}[/{stake_color}]"
+        f"{unstake_all_label}: [{stake_color}]{available_balance}[/{stake_color}]"
         f" from [{stake_color}]{display_address}[/{stake_color}]"
         f" on netuid: [{stake_color}]{netuid}[/{stake_color}]? [y/n/q]"
     )
@@ -1423,7 +1512,7 @@ def _ask_unstake_amount(
         if response == "q":
             return None
         if response == "y":
-            return current_stake_balance
+            return available_balance
         if response != "n":
             console.print("[red]Invalid input. Please enter 'y', 'n', or 'q'.[/red]")
             continue
@@ -1431,7 +1520,7 @@ def _ask_unstake_amount(
         amount_prompt = (
             f"Enter amount to unstake in [{stake_color}]{Balance.get_unit(netuid)}[/{stake_color}]"
             f" from subnet: [{stake_color}]{netuid}[/{stake_color}]"
-            f" (Max: [{stake_color}]{current_stake_balance}[/{stake_color}])"
+            f" (Max: [{stake_color}]{available_balance}[/{stake_color}])"
         )
 
         while True:
@@ -1450,9 +1539,10 @@ def _ask_unstake_amount(
                 amount_to_unstake = Balance.from_tao(amount_value)
                 amount_to_unstake.set_unit(netuid)
 
-                if amount_to_unstake > current_stake_balance:
+                if amount_to_unstake > available_balance:
                     console.print(
-                        f"[red]Amount exceeds current stake balance of {current_stake_balance}.[/red]"
+                        f"[red]Amount exceeds the available "
+                        f"{available_balance} on netuid {netuid}.[/red]"
                     )
                     continue
 
