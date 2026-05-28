@@ -1,5 +1,25 @@
 # Changelog
 
+## 9.22.0 /2026-05-28
+
+## What's Changed
+* fix(cli,wallets): raise on user decline, expand ~ in --json-path, unify regen-key error handling by @RUNECTZ33 in https://github.com/latent-to/btcli/pull/963
+* Strips potentially PID from debug log by @thewhaleking in https://github.com/latent-to/btcli/pull/968
+* fix w set-identity price bug (adjusted) by @thewhaleking in https://github.com/latent-to/btcli/pull/970
+* Adds pr guard workflow by @thewhaleking in https://github.com/latent-to/btcli/pull/972
+* Adds support for new crypto type param of bt-wallet by @thewhaleking in https://github.com/latent-to/btcli/pull/971
+* Supports new Typer release by @thewhaleking in https://github.com/latent-to/btcli/pull/973
+* Update requirements for bittensor-wallet release by @thewhaleking in https://github.com/latent-to/btcli/pull/976
+* Conviction support by @thewhaleking in https://github.com/latent-to/btcli/pull/974
+* Adds tests for different crypto types by @thewhaleking in https://github.com/latent-to/btcli/pull/975
+* Remove "Conviction support" by @thewhaleking in https://github.com/latent-to/btcli/pull/977
+* Feat/conviction by @ibraheem-abe in https://github.com/latent-to/btcli/pull/978
+
+## New Contributors
+* @RUNECTZ33 made their first contribution in https://github.com/latent-to/btcli/pull/963
+
+**Full Changelog**: https://github.com/latent-to/btcli/compare/v9.21.2...v9.22.0
+
 ## 9.21.2 /2026-05-15
 
 ## What's Changed
