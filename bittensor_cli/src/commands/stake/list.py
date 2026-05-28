@@ -50,22 +50,37 @@ async def stake_list(
             subtensor.fetch_coldkey_hotkey_identities(block_hash=block_hash_),
             subtensor.all_subnets(block_hash=block_hash_),
         )
-
         hotkey_identity_map_ = hotkey_identity_map_ or {"hotkeys": {}, "coldkeys": {}}
-        claimable_amounts_ = {}
-        if sub_stakes_:
-            claimable_amounts_ = await subtensor.get_claimable_stakes_for_coldkey(
-                coldkey_ss58=coldkey_address,
-                stakes_info=sub_stakes_,
-                block_hash=block_hash_,
-            )
-        # sub_stakes = substakes[coldkey_address]
         dynamic_info__ = {info.netuid: info for info in _dynamic_info}
+        claimable_amounts_ = {}
+        locked_by_netuid: dict = {}
+        if sub_stakes_:
+            stake_netuids = sorted({int(s.netuid) for s in sub_stakes_})
+            claimable_amounts_, *rolled_locks = await asyncio.gather(
+                subtensor.get_claimable_stakes_for_coldkey(
+                    coldkey_ss58=coldkey_address,
+                    stakes_info=sub_stakes_,
+                    block_hash=block_hash_,
+                ),
+                *[
+                    subtensor.get_coldkey_lock(
+                        coldkey_address, netuid_, block_hash=block_hash_
+                    )
+                    for netuid_ in stake_netuids
+                ],
+            )
+            locked_by_netuid = {
+                netuid_: rolled
+                for netuid_, rolled in zip(stake_netuids, rolled_locks)
+                if rolled is not None and rolled.locked_mass > 0
+            }
+
         return (
             sub_stakes_,
             hotkey_identity_map_,
             dynamic_info__,
             claimable_amounts_,
+            locked_by_netuid,
         )
 
     def format_hotkey_name(hotkey_ss58_: str, hotkey_identity_map_: dict) -> str:
@@ -77,6 +92,7 @@ async def stake_list(
         rows: list[list[str]],
         total_tao_value_: Balance,
         total_swapped_tao_value_: Balance,
+        has_locks_: bool = False,
     ):
         title = f"\n[{COLOR_PALETTE['GENERAL']['HEADER']}]Hotkey: {hotkey_name_}\nNetwork: {subtensor.network}\n\n"
         # TODO: Add hint back in after adding columns descriptions
@@ -120,6 +136,12 @@ async def stake_list(
             style=COLOR_PALETTE["STAKE"]["STAKE_ALPHA"],
             justify="center",
         )
+        if has_locks_:
+            defined_table.add_column(
+                f"[white]Locked ({Balance.get_unit(1)})",
+                style=COLOR_PALETTE["STAKE"]["STAKE_ALPHA"],
+                justify="center",
+            )
         defined_table.add_column(
             f"[white]Price \n({Balance.unit}_in/{Balance.get_unit(1)}_in)",
             footer_style="white",
@@ -178,6 +200,9 @@ async def stake_list(
         )
         sorted_substakes = root_stakes + other_stakes
         substakes_values = []
+        has_locks_for_table = any(
+            int(s.netuid) in locked_by_netuid for s in sorted_substakes
+        )
         for substake_ in sorted_substakes:
             netuid = substake_.netuid
             pool = dynamic_info[netuid]
@@ -193,16 +218,6 @@ async def stake_list(
             # TAO value cell
             tao_value_ = pool.alpha_to_tao(substake_.stake)
             total_swapped_tao_value_ += tao_value_
-
-            # TODO why is nothing done with `swap_value`?
-            if netuid == 0:
-                swap_value = f"[{COLOR_PALETTE['STAKE']['NOT_REGISTERED']}]N/A[/{COLOR_PALETTE['STAKE']['NOT_REGISTERED']}]"
-            else:
-                swap_value = (
-                    f"τ {millify_tao(tao_value_.tao)}"
-                    if not verbose
-                    else f"{tao_value_}"
-                )
 
             # Per block emission cell
             per_block_emission = substake_.emission.tao / (pool.tempo or 1)
@@ -234,16 +249,35 @@ async def stake_list(
                 else:
                     claimable_cell = "-"
 
-                rows.append(
-                    [
-                        str(netuid),  # Number
-                        subnet_name_cell,  # Symbol + name
-                        f"τ {millify_tao(tao_value_.tao)}"
+                stake_cell = (
+                    f"{stake_value} {symbol}"
+                    if netuid != 0
+                    else f"{symbol} {stake_value}"
+                )
+
+                locked_cell = "-"
+                rolled_lock = locked_by_netuid.get(netuid)
+                if rolled_lock is not None:
+                    locked_alpha = rolled_lock.locked_balance(netuid)
+                    locked_amount_str = (
+                        millify_tao(locked_alpha.tao)
                         if not verbose
-                        else f"{tao_value_}",  # Value (α x τ/α)
-                        f"{stake_value} {symbol}"
-                        if netuid != 0
-                        else f"{symbol} {stake_value}",  # Stake (a)
+                        else f"{locked_alpha.tao:,.4f}"
+                    )
+                    locked_cell = f"{locked_amount_str} {symbol}"
+
+                row_cells = [
+                    str(netuid),  # Number
+                    subnet_name_cell,  # Symbol + name
+                    f"τ {millify_tao(tao_value_.tao)}"
+                    if not verbose
+                    else f"{tao_value_}",  # Value (α x τ/α)
+                    stake_cell,  # Stake (α)
+                ]
+                if has_locks_for_table:
+                    row_cells.append(locked_cell)  # Locked (α) — conditional
+                row_cells.extend(
+                    [
                         f"{pool.price.tao:.4f} τ/{symbol}",  # Rate (t/a)
                         # f"τ {millify_tao(tao_ownership.tao)}" if not verbose else f"{tao_ownership}",  # TAO equiv
                         # swap_value,  # Swap(α) -> τ
@@ -258,12 +292,19 @@ async def stake_list(
                         claimable_cell,  # Claimable amount
                     ]
                 )
+                rows.append(row_cells)
                 substakes_values.append(
                     {
                         "netuid": netuid,
                         "subnet_name": subnet_name,
                         "value": tao_value_.tao,
                         "stake_value": substake_.stake.tao,
+                        "locked_tao": rolled_lock.locked_balance(netuid).tao
+                        if rolled_lock is not None
+                        else 0.0,
+                        "locked_rao": int(rolled_lock.locked_mass)
+                        if rolled_lock is not None
+                        else 0,
                         "rate": pool.price.tao,
                         # "swap_value": swap_value,
                         "registered": True if substake_.is_registered else False,
@@ -275,7 +316,11 @@ async def stake_list(
                     }
                 )
         created_table = define_table(
-            name_, rows, total_tao_value_, total_swapped_tao_value_
+            name_,
+            rows,
+            total_tao_value_,
+            total_swapped_tao_value_,
+            has_locks_for_table,
         )
         for row in rows:
             created_table.add_row(*row)
@@ -397,19 +442,6 @@ async def stake_list(
                 precision=4,
                 millify=True if not verbose else False,
             )
-            # TODO why is nothing done with swap_cell
-            if netuid != 0:
-                swap_cell = format_cell(
-                    swapped_tao_value_.tao,
-                    prev.get("swapped_value"),
-                    unit="τ",
-                    unit_first_=True,
-                    precision=4,
-                    millify=True if not verbose else False,
-                )
-            else:
-                swap_cell = f"[{COLOR_PALETTE['STAKE']['NOT_REGISTERED']}]N/A[/{COLOR_PALETTE['STAKE']['NOT_REGISTERED']}]"
-
             emission_value = substake_.emission.tao / (pool.tempo or 1)
             emission_cell = format_cell(
                 emission_value,
@@ -487,6 +519,7 @@ async def stake_list(
             hotkey_identity_map,
             dynamic_info,
             claimable_amounts,
+            locked_by_netuid,
         ),
         balance,
     ) = await asyncio.gather(
@@ -547,6 +580,7 @@ async def stake_list(
                         _hotkey_identity_map,
                         dynamic_info_,
                         claimable_amounts_live,
+                        _locked_by_netuid,
                     ) = await get_stake_data(block_hash)
                     selected_stakes = [
                         stake
@@ -649,6 +683,15 @@ async def stake_list(
         dict_output["free_balance"] = balance.tao
         dict_output["total_tao_value"] = all_hks_tao_value.tao + balance.tao
         dict_output["total_swapped_tao_value"] = all_hks_swapped_tao_value.tao
+
+        if locked_by_netuid and not json_output:
+            n_subnets = len(locked_by_netuid)
+            plural = "s" if n_subnets != 1 else ""
+            console.print(
+                f"[dim]Active locks: {n_subnets} subnet{plural} · "
+                f"Run [bold]`btcli lock list`[/bold] for mode & projections[/dim]"
+            )
+
         if json_output:
             json_console.print(json.dumps(dict_output))
         if not sub_stakes:
