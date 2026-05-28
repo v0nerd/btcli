@@ -269,6 +269,12 @@ class TestMoveStakeInteractiveSelection:
             "destination_netuid": 2,
             "destination_hotkey": ALT_HOTKEY_SS58,
         }
+        mock_subtensor.get_stake_for_coldkey = AsyncMock(
+            return_value=[
+                _make_stake(HOTKEY_SS58, 1, 100.0),
+                _make_stake(ALT_HOTKEY_SS58, 2, 50.0),
+            ]
+        )
         with (
             patch(
                 f"{MODULE}.stake_move_transfer_selection",
@@ -298,7 +304,6 @@ class TestMoveStakeInteractiveSelection:
                 decline=False,
             )
 
-        stake_calls = mock_subtensor.get_stake.call_args_list
-        hotkeys_queried = {c.kwargs.get("hotkey_ss58") for c in stake_calls}
-        assert HOTKEY_SS58 in hotkeys_queried
-        assert ALT_HOTKEY_SS58 in hotkeys_queried
+        params = mock_subtensor.substrate.compose_call.call_args.kwargs["call_params"]
+        assert params["origin_hotkey"] == HOTKEY_SS58
+        assert params["destination_hotkey"] == ALT_HOTKEY_SS58

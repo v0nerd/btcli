@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import inspect
 import os
 import re
@@ -10,9 +9,7 @@ import time
 from typing import TYPE_CHECKING, Optional, Protocol
 
 from bittensor_wallet import Keypair, Wallet
-from click.testing import Result
-from packaging.version import parse as parse_version, Version
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from bittensor_cli.cli import CLIManager
 
@@ -73,10 +70,7 @@ def setup_wallet(uri: str) -> tuple[Keypair, Wallet, str, ExecCommand]:
                             extra_args.extend(["--network", "ws://127.0.0.1:9945"])
 
         # Capture stderr separately from stdout
-        if parse_version(importlib.metadata.version("click")) < Version("8.2.0"):
-            runner = CliRunner(mix_stderr=False)
-        else:
-            runner = CliRunner()
+        runner = CliRunner()
         # Prepare the command arguments
         args = [
             command,

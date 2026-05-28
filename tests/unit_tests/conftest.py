@@ -196,4 +196,5 @@ def mock_subtensor() -> MagicMock:
         return {ss58: True for ss58 in hotkeys_ss58}
 
     st.do_hotkeys_exist = AsyncMock(side_effect=_do_hotkeys_exist)
+    st.get_coldkey_lock = AsyncMock(return_value=None)
     return st

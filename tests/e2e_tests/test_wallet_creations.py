@@ -136,7 +136,7 @@ def extract_json(output: str) -> dict:
 
     bittensor-wallet may prepend a human-readable mnemonic warning to stdout
     when built with the ``python-bindings`` feature (it routes prints through
-    Python's ``sys.stdout``, which Click's ``CliRunner`` captures into
+    Python's ``sys.stdout``, which Typer's ``CliRunner`` captures into
     ``result.stdout``). The published 4.0.1 wheel writes that warning to the
     OS-level fd 1 instead, so ``result.stdout`` is clean. Strip whatever
     prefix is present and decode the JSON object that btcli emitted.
@@ -422,7 +422,7 @@ def test_wallet_regen(wallet_setup, capfd):
 
     # Depending on how bittensor-wallet was built, the mnemonic is printed either
     # to the OS-level stdout (Rust `print!`, captured by capfd) or to Python's
-    # sys.stdout (pyo3 `python-bindings` feature, captured by Click's CliRunner
+    # sys.stdout (pyo3 `python-bindings` feature, captured by Typer's CliRunner
     # into result.stdout). Read both so the test is robust to either build.
     captured = capfd.readouterr()
     mnemonics = extract_mnemonics_from_commands(captured.out + (result.stdout or ""))
