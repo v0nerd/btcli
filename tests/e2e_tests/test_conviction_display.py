@@ -192,7 +192,7 @@ def test_lock_roll_forward_comparision(local_chain, wallet_setup):
     )
     bob_alpha = sum(entry["stake_value"] for entry in bob_stakes)
     assert bob_alpha > 0, "Bob has no alpha on SN2 to lock"
-    
+
     bob_lock_amount = round(bob_alpha * 0.5, 4)
     bob_lock_result = exec_bob(
         command="lock",
@@ -213,7 +213,6 @@ def test_lock_roll_forward_comparision(local_chain, wallet_setup):
             "--chain",
             CHAIN,
             "--no-prompt",
-            "--no-mev-protection",
             "--no-graph",
         ],
     )
@@ -364,7 +363,6 @@ def test_lock_roll_forward_comparision(local_chain, wallet_setup):
             "--chain",
             CHAIN,
             "--no-prompt",
-            "--no-mev-protection",
             "--no-graph",
         ],
     )
