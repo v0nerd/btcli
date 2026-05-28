@@ -1,6 +1,8 @@
 import asyncio
 import json
+import math
 import sqlite3
+from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, cast
 
 from async_substrate_interface import AsyncExtrinsicReceipt
@@ -14,6 +16,12 @@ from rich import box
 
 from bittensor_cli.src import COLOR_PALETTE
 from bittensor_cli.src.bittensor.balances import Balance
+from bittensor_cli.src.bittensor.locks import (
+    hotkey_aggregate_conviction,
+    hotkey_aggregate_locked_split,
+    subnet_total_conviction,
+    subnet_total_locked,
+)
 from bittensor_cli.src.bittensor.extrinsics.registration import (
     burned_register_extrinsic,
 )
@@ -40,6 +48,7 @@ from bittensor_cli.src.bittensor.utils import (
     get_subnet_name,
     unlock_key,
     blocks_to_duration,
+    get_coldkey_identity_name,
     json_console,
     get_hotkey_pub_ss58,
     print_extrinsic_id,
@@ -47,6 +56,7 @@ from bittensor_cli.src.bittensor.utils import (
 )
 
 if TYPE_CHECKING:
+    from bittensor_cli.src.bittensor.chain_data import SubnetLockAggregates
     from bittensor_cli.src.bittensor.subtensor_interface import SubtensorInterface
 
 TAO_WEIGHT = 0.18
@@ -110,6 +120,90 @@ def format_claim_type_for_subnet(claim_info: dict, current_netuid: int) -> str:
     else:
         keep_subnets = claim_info.get("subnets", [])
         return "Keep" if current_netuid in keep_subnets else "Swap"
+
+
+def _build_subnet_lock_display(
+    hotkeys: list[str],
+    aggregates: "SubnetLockAggregates",
+    owner_hotkey: str,
+    now: int,
+    unlock_rate: int,
+    maturity_rate: int,
+) -> tuple[int, dict[str, Decimal], dict[str, tuple[int, int]]]:
+    conviction_by_hotkey: dict[str, Decimal] = {}
+    locked_split_by_hotkey: dict[str, tuple[int, int]] = {}
+
+    for hotkey in set(hotkeys):
+        conviction = hotkey_aggregate_conviction(
+            hotkey=hotkey,
+            aggregates=aggregates,
+            owner_hotkey=owner_hotkey,
+            now=now,
+            unlock_rate=unlock_rate,
+            maturity_rate=maturity_rate,
+        )
+        if conviction > 0:
+            conviction_by_hotkey[hotkey] = conviction
+
+        perpetual_locked, decaying_locked = hotkey_aggregate_locked_split(
+            hotkey=hotkey,
+            aggregates=aggregates,
+            owner_hotkey=owner_hotkey,
+            now=now,
+            unlock_rate=unlock_rate,
+            maturity_rate=maturity_rate,
+        )
+        if perpetual_locked > 0 or decaying_locked > 0:
+            locked_split_by_hotkey[hotkey] = (perpetual_locked, decaying_locked)
+
+    total_locked_rao = subnet_total_locked(
+        aggregates=aggregates,
+        now=now,
+        unlock_rate=unlock_rate,
+        maturity_rate=maturity_rate,
+    )
+    return total_locked_rao, conviction_by_hotkey, locked_split_by_hotkey
+
+
+def _format_locked_split_cell(
+    locked_split: Optional[tuple[int, int]],
+    netuid: int,
+    symbol: str,
+    verbose: bool,
+) -> str:
+    if locked_split is None:
+        return "—"
+
+    def format_locked_rao(rao: int) -> str:
+        if rao <= 0:
+            return "—"
+        alpha = Balance.from_rao(rao).set_unit(netuid)
+        return (
+            f"{alpha.tao:.4f} {symbol}"
+            if verbose
+            else f"{millify_tao(alpha.tao)} {symbol}"
+        )
+
+    perpetual_rao, decaying_rao = locked_split
+    return (
+        f"{format_locked_rao(perpetual_rao)} [white]|[/white] "
+        f"{format_locked_rao(decaying_rao)}"
+    )
+
+
+def _format_conviction_cell(
+    conviction: Optional[Decimal],
+    netuid: int,
+    symbol: str,
+    verbose: bool,
+) -> str:
+    if conviction is None:
+        return "—"
+
+    alpha = Balance.from_rao(int(conviction)).set_unit(netuid)
+    return (
+        f"{alpha.tao:.4f} {symbol}" if verbose else f"{millify_tao(alpha.tao)} {symbol}"
+    )
 
 
 async def register_subnetwork_extrinsic(
@@ -1272,6 +1366,9 @@ async def show(
                 current_burn_cost,
                 root_claim_types,
                 ema_tao_inflow,
+                lock_aggregates,
+                lock_rates,
+                current_block_,
             ) = await asyncio.gather(
                 subtensor.subnet(netuid=netuid_, block_hash=block_hash),
                 subtensor.query_all_identities(block_hash=block_hash),
@@ -1282,7 +1379,14 @@ async def show(
                 subtensor.get_subnet_ema_tao_inflow(
                     netuid=netuid_, block_hash=block_hash
                 ),
+                subtensor.get_subnet_lock_aggregates(
+                    netuid=netuid_, block_hash=block_hash
+                ),
+                subtensor.get_lock_rates(block_hash=block_hash),
+                subtensor.substrate.get_block_number(block_hash=block_hash),
             )
+            lock_unlock_rate, lock_maturity_rate = lock_rates
+            lock_current_block = int(current_block_)
 
             selected_mechanism_id = mechanism_id or 0
 
@@ -1325,6 +1429,17 @@ async def show(
             owner_hotkeys.append(subnet_info.owner_hotkey)
 
         owner_identity = identities.get(subnet_info.owner_coldkey, {}).get("name", "")
+
+        total_locked_rao, conviction_by_hotkey, locked_split_by_hotkey = (
+            _build_subnet_lock_display(
+                hotkeys=metagraph_info.hotkeys,
+                aggregates=lock_aggregates,
+                owner_hotkey=subnet_info.owner_hotkey,
+                now=lock_current_block,
+                unlock_rate=lock_unlock_rate,
+                maturity_rate=lock_maturity_rate,
+            )
+        )
 
         sorted_indices = sorted(
             range(len(metagraph_info.hotkeys)),
@@ -1378,6 +1493,17 @@ async def show(
             if tao_stake.tao > 0:
                 claim_type_info = root_claim_types.get(coldkey_ss58, {"type": "Swap"})
                 claim_type = format_claim_type_for_subnet(claim_type_info, netuid_)
+
+            hotkey_ss58 = metagraph_info.hotkeys[idx]
+            locked_split = locked_split_by_hotkey.get(hotkey_ss58)
+            conv_value = conviction_by_hotkey.get(hotkey_ss58)
+            conv_cell = _format_conviction_cell(
+                conviction=conv_value,
+                netuid=netuid_,
+                symbol=subnet_info.symbol,
+                verbose=verbose,
+            )
+
             rows.append(
                 (
                     str(idx),  # UID
@@ -1393,6 +1519,7 @@ async def show(
                     f"{metagraph_info.dividends[idx]:.6f}",  # Dividends
                     f"{metagraph_info.incentives[idx]:.6f}",  # Incentive
                     f"{Balance.from_tao(metagraph_info.emission[idx].tao).set_unit(netuid_).tao:.6f} {subnet_info.symbol}",  # Emissions
+                    conv_cell,  # Conv. (α-eq)
                     f"{metagraph_info.hotkeys[idx][:6]}"
                     if not verbose
                     else f"{metagraph_info.hotkeys[idx]}",  # Hotkey
@@ -1411,6 +1538,15 @@ async def show(
                     "tao_stake": tao_stake.tao,
                     "dividends": metagraph_info.dividends[idx],
                     "incentive": metagraph_info.incentives[idx],
+                    "locked_perpetual_rao": (
+                        locked_split[0] if locked_split is not None else 0
+                    ),
+                    "locked_decaying_rao": (
+                        locked_split[1] if locked_split is not None else 0
+                    ),
+                    "conviction_alpha_eq_rao": (
+                        int(conv_value) if conv_value is not None else 0
+                    ),
                     "emissions": Balance.from_tao(metagraph_info.emission[idx].tao)
                     .set_unit(netuid_)
                     .tao,
@@ -1471,6 +1607,12 @@ async def show(
             footer=f"{emission_sum:.4f} {subnet_info.symbol}",
         )
         table.add_column(
+            f"Conviction ({subnet_info.symbol}-eq)",
+            style=COLOR_PALETTE["POOLS"]["EXTRA_2"],
+            no_wrap=True,
+            justify="center",
+        )
+        table.add_column(
             "Hotkey",
             style=COLOR_PALETTE["GENERAL"]["HOTKEY"],
             no_wrap=True,
@@ -1524,6 +1666,12 @@ async def show(
                 else Balance(0)
             )
             total_mechanisms = mechanism_count if mechanism_count is not None else 1
+            _total_locked = Balance.from_rao(total_locked_rao).set_unit(netuid_)
+            total_locked = (
+                f"{millify_tao(_total_locked.tao)} {subnet_info.symbol}"
+                if not verbose
+                else f"{_total_locked.tao:.4f} {subnet_info.symbol}"
+            )
 
             output_dict = {
                 "netuid": netuid_,
@@ -1571,6 +1719,7 @@ async def show(
                 f"\n  Emission: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]τ {subnet_info.tao_in_emission.tao:,.4f}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
                 f"\n  TAO Pool: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]τ {tao_pool}[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
                 f"\n  Alpha Pool: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]{alpha_pool} {subnet_info.symbol}[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
+                f"\n  Total locked: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}] {total_locked} [/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
                 # f"\n  Stake: [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]{subnet_info.alpha_out.tao:,.5f} {subnet_info.symbol}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
                 f"\n  Tempo: [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]{subnet_info.blocks_since_last_step}/{subnet_info.tempo}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
                 f"\n  Registration cost (recycled): [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]τ {current_registration_burn.tao:.4f}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
@@ -2821,3 +2970,271 @@ async def set_symbol(
         else:
             print_error(f"Failed: {err_msg}")
         return False
+
+
+async def subnet_conviction(
+    subtensor: "SubtensorInterface",
+    netuid: int,
+    limit: int,
+    json_output: bool,
+    verbose: bool,
+    *,
+    hotkey_selection: bool = False,
+    show_summary: bool = True,
+) -> Optional[str]:
+    """
+    Render the rolled conviction ranking for one subnet.
+    """
+    block_hash = await subtensor.substrate.get_chain_head()
+    (
+        current_block,
+        lock_aggregates,
+        lock_rates,
+        subnet_info,
+        king,
+        identity_map,
+    ) = await asyncio.gather(
+        subtensor.substrate.get_block_number(block_hash=block_hash),
+        subtensor.get_subnet_lock_aggregates(netuid=netuid, block_hash=block_hash),
+        subtensor.get_lock_rates(block_hash=block_hash),
+        subtensor.subnet(netuid=netuid, block_hash=block_hash),
+        subtensor.get_most_convicted_hotkey_on_subnet(
+            netuid=netuid, block_hash=block_hash
+        ),
+        subtensor.fetch_coldkey_hotkey_identities(block_hash=block_hash),
+    )
+
+    # Calculate conviction stats
+    unlock_rate, maturity_rate = lock_rates
+    owner_hotkey = subnet_info.owner_hotkey
+    total_conviction = subnet_total_conviction(
+        lock_aggregates, current_block, unlock_rate, maturity_rate
+    )
+    threshold_alpha_eq = int(subnet_info.alpha_out.rao) // 10
+    pct_of_threshold = (
+        float(total_conviction) / float(threshold_alpha_eq) * 100.0
+        if threshold_alpha_eq > 0
+        else 0.0
+    )
+    age_blocks = max(0, current_block - int(subnet_info.network_registered_at))
+
+    # Fetch identities of lock participants
+    candidate_hotkeys = (
+        set(lock_aggregates.hotkey_perpetual.keys())
+        | set(lock_aggregates.hotkey_decaying.keys())
+        | {owner_hotkey}
+    )
+    candidate_hotkeys_list = sorted(candidate_hotkeys)
+    owner_results = await asyncio.gather(
+        *[
+            subtensor.get_hotkey_owner(hotkey, block_hash=block_hash)
+            for hotkey in candidate_hotkeys_list
+        ]
+    )
+    coldkey_by_hotkey = {
+        hotkey: str(coldkey) if coldkey is not None else None
+        for hotkey, coldkey in zip(candidate_hotkeys_list, owner_results)
+    }
+
+    hotkey_rows: list[dict] = []
+    for hotkey in candidate_hotkeys_list:
+        coldkey = coldkey_by_hotkey.get(hotkey)
+        identity = (
+            get_coldkey_identity_name(identity_map, coldkey)
+            if coldkey is not None
+            else None
+        )
+
+        conviction = hotkey_aggregate_conviction(
+            hotkey,
+            lock_aggregates,
+            owner_hotkey,
+            current_block,
+            unlock_rate,
+            maturity_rate,
+        )
+
+        share = (
+            float(conviction) / float(total_conviction) * 100.0
+            if total_conviction > 0
+            else 0.0
+        )
+
+        perpetual_rao, decaying_rao = hotkey_aggregate_locked_split(
+            hotkey,
+            lock_aggregates,
+            owner_hotkey,
+            current_block,
+            unlock_rate,
+            maturity_rate,
+        )
+
+        hotkey_rows.append(
+            {
+                "hotkey": hotkey,
+                "coldkey": coldkey,
+                "identity": identity,
+                "conviction": conviction,
+                "share": share,
+                "perpetual_alpha_rao": perpetual_rao,
+                "decaying_alpha_rao": decaying_rao,
+                "is_owner": hotkey == owner_hotkey,
+                "is_king": hotkey == king,
+            }
+        )
+
+    hotkey_rows.sort(key=lambda r: (not r["is_king"], -r["conviction"]))
+    hotkey_rows = hotkey_rows[:limit]
+
+    if json_output:
+        out = {
+            "netuid": netuid,
+            "current_block": current_block,
+            "total_conviction_rao": str(total_conviction),
+            "threshold_rao": threshold_alpha_eq,
+            "pct_of_threshold": pct_of_threshold,
+            "age_blocks": age_blocks,
+            "king_hotkey": king,
+            "rows": [
+                {
+                    "hotkey": r["hotkey"],
+                    "coldkey": r["coldkey"],
+                    "identity": r["identity"],
+                    "conviction_rao": str(r["conviction"]),
+                    "share": r["share"],
+                    "perpetual_alpha_rao": r["perpetual_alpha_rao"],
+                    "decaying_alpha_rao": r["decaying_alpha_rao"],
+                    "is_owner": r["is_owner"],
+                    "is_king": r["is_king"],
+                }
+                for r in hotkey_rows
+            ],
+        }
+        json_console.print_json(data=out)
+        return None
+
+    symbol = f"{subnet_info.symbol}\u200e"
+    king_cell = (
+        "—" if king is None else king if verbose else f"{king[:6]}...{king[-6:]}"
+    )
+    table = create_table(
+        title=f"\n[{COLOR_PALETTE['GENERAL']['HEADER']}]Subnet Conviction"
+        f"\nNetwork: [{COLOR_PALETTE['GENERAL']['SUBHEADING']}]{subtensor.network}"
+        f" • Block: {current_block:,}"
+        f"[/{COLOR_PALETTE['GENERAL']['SUBHEADING']}]\n\n",
+        show_footer=False,
+    )
+    table.add_column("[bold white]Rank", style="grey89", justify="center")
+    table.add_column(
+        "[bold white]Conviction",
+        style=COLOR_PALETTE["POOLS"]["EXTRA_2"],
+        justify="center",
+    )
+    table.add_column("[bold white]Share", justify="center")
+    table.add_column(
+        f"[bold white]Locked ({subnet_info.symbol})\n[white]Perpetual | Decay[/white]",
+        style=COLOR_PALETTE["POOLS"]["ALPHA_IN"],
+        justify="center",
+        no_wrap=True,
+    )
+    table.add_column(
+        "[bold white]Hotkey",
+        style=COLOR_PALETTE["GENERAL"]["HOTKEY"],
+        justify="center",
+    )
+    table.add_column(
+        "[bold white]Coldkey",
+        style=COLOR_PALETTE["GENERAL"]["COLDKEY"],
+        justify="center",
+    )
+    table.add_column(
+        "[bold white]Identity",
+        style=COLOR_PALETTE["GENERAL"]["SUBHEADING"],
+        justify="center",
+    )
+    table.add_column("[bold white]Role", justify="center")
+
+    for rank, record in enumerate(hotkey_rows, start=1):
+        hotkey = record["hotkey"]
+        hotkey_cell = hotkey if verbose else f"{hotkey[:6]}...{hotkey[-6:]}"
+        identity_cell = record["identity"] or "—"
+        coldkey = record["coldkey"]
+        coldkey_cell = (
+            "—"
+            if coldkey is None
+            else coldkey
+            if verbose
+            else f"{coldkey[:6]}...{coldkey[-6:]}"
+        )
+        locked_split = (
+            (record["perpetual_alpha_rao"], record["decaying_alpha_rao"])
+            if record["perpetual_alpha_rao"] > 0 or record["decaying_alpha_rao"] > 0
+            else None
+        )
+        table.add_row(
+            str(rank),
+            _format_conviction_cell(record["conviction"], netuid, symbol, verbose),
+            f"{record['share']:.0f}%",
+            _format_locked_split_cell(locked_split, netuid, symbol, verbose),
+            hotkey_cell,
+            coldkey_cell,
+            identity_cell,
+            "Owner" if record["is_owner"] else "—",
+        )
+    console.print(table)
+
+    if hotkey_selection:
+        if not hotkey_rows:
+            console.print("[dim]No conviction hotkeys found on this subnet.[/dim]")
+            return None
+
+        valid_ranks = [str(rank) for rank in range(1, len(hotkey_rows) + 1)]
+        selection = Prompt.ask(
+            "\nEnter the rank of the hotkey you want to move the lock to [dim](or press Enter to cancel)[/dim]",
+            default="",
+            choices=[""] + valid_ranks,
+            show_choices=False,
+            show_default=False,
+        )
+        if selection == "":
+            return None
+
+        selected_record = hotkey_rows[int(selection) - 1]
+        identity = selected_record["identity"]
+        identity_str = f" ({identity})" if identity else ""
+        selected_hotkey = selected_record["hotkey"]
+        console.print(
+            f"\nSelected hotkey: [{COLOR_PALETTE['GENERAL']['SUBHEADING']}]"
+            f"{selected_hotkey}{identity_str}"
+            f"[/{COLOR_PALETTE['GENERAL']['SUBHEADING']}]"
+        )
+        return selected_hotkey
+
+    if not show_summary:
+        return None
+
+    console.print()
+    console.print(
+        f"[{COLOR_PALETTE['GENERAL']['SUBHEADING']}]Subnet {netuid}: "
+        f"{get_subnet_name(subnet_info)}[/{COLOR_PALETTE['GENERAL']['SUBHEADING']}]"
+        f"\n  Total conviction: [{COLOR_PALETTE['POOLS']['EXTRA_2']}]"
+        f"{_format_conviction_cell(total_conviction, netuid, symbol, verbose)}"
+        f"[/{COLOR_PALETTE['POOLS']['EXTRA_2']}]"
+        f"\n  10% threshold: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
+        f"{_format_conviction_cell(Decimal(threshold_alpha_eq), netuid, symbol, verbose)}"
+        f"[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
+        f"\n  Threshold used: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
+        f"{pct_of_threshold:.0f}%[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
+        f"\n  Subnet age: [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
+        f"{blocks_to_duration(age_blocks)}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
+        f"\n  Top hotkey: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
+        f"{king_cell}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
+    )
+    unlock_half_life = blocks_to_duration(int(unlock_rate * math.log(2)))
+    maturity_half_life = blocks_to_duration(int(maturity_rate * math.log(2)))
+    console.print(
+        "\n[dim]Lock decay context:"
+        f"\n    UnlockRate half-life ≈ {unlock_half_life};"
+        f"\n    MaturityRate half-life ≈ {maturity_half_life}.[/dim]"
+    )
+    return None
