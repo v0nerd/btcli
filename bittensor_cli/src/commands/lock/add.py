@@ -23,6 +23,7 @@ from bittensor_cli.src.bittensor.utils import (
     confirm_action,
     console,
     create_table,
+    group_subnets,
     is_valid_ss58_address,
     json_console,
     print_error,
@@ -402,8 +403,47 @@ def _prompt_netuid(
         print_error("No subnet stake found for this coldkey.")
         return None
 
+    available_netuids = group_subnets(candidates)
+    candidate_set = set(candidates)
+
+    while True:
+        selected = Prompt.ask(
+            f"Enter netuid to lock [dim](available: {available_netuids})[/dim]"
+        ).strip()
+
+        try:
+            selected_netuid = int(selected)
+        except ValueError:
+            print_error("Please enter a valid netuid.")
+            continue
+
+        if selected_netuid in candidate_set:
+            _print_selected_netuid_table(
+                netuid=selected_netuid,
+                total_alpha_by_netuid=total_alpha_by_netuid,
+                locks_by_netuid=locks_by_netuid,
+                owner_hotkeys_by_netuid=owner_hotkeys_by_netuid,
+                current_block=current_block,
+                unlock_rate=unlock_rate,
+                maturity_rate=maturity_rate,
+            )
+            console.print()
+            return selected_netuid
+
+        print_error(f"Please select a netuid with stake: {available_netuids}")
+
+
+def _print_selected_netuid_table(
+    netuid: int,
+    total_alpha_by_netuid: dict[int, int],
+    locks_by_netuid: dict[int, ColdkeySubnetLock],
+    owner_hotkeys_by_netuid: dict[int, Optional[str]],
+    current_block: int,
+    unlock_rate: int,
+    maturity_rate: int,
+) -> None:
     table = create_table(
-        title=f"\n[{COLORS.G.HEADER}]Choose Subnet to Lock\n",
+        title=f"\n[{COLORS.G.HEADER}]Selected Subnet\n",
         show_footer=False,
     )
     table.add_column("Netuid", justify="center", style=COLORS.G.NETUID)
@@ -412,55 +452,38 @@ def _prompt_netuid(
     table.add_column("Available", justify="right", style=COLORS.S.STAKE_AMOUNT)
     table.add_column("Mode", justify="center")
 
-    for candidate_netuid in candidates:
-        existing_lock = locks_by_netuid.get(candidate_netuid)
-        targets_owner_hotkey = (
-            existing_lock is not None
-            and is_subnet_owner_hotkey_lock(
-                existing_lock.hotkey,
-                owner_hotkeys_by_netuid.get(candidate_netuid),
-            )
-        )
-
-        rolled = rolled_existing_lock(
-            existing=existing_lock,
-            current_block=current_block,
-            unlock_rate=unlock_rate,
-            maturity_rate=maturity_rate,
-            owner_lock=targets_owner_hotkey,
-        )
-
-        locked_rao = rolled.locked_mass if rolled is not None else 0
-        available_rao = available_to_unstake(
-            total_alpha_by_netuid[candidate_netuid], locked_rao
-        )
-
-        mode = (
-            "perpetual"
-            if existing_lock is not None and existing_lock.is_perpetual
-            else "decaying"
-            if existing_lock is not None
-            else "—"
-        )
-
-        table.add_row(
-            str(candidate_netuid),
-            format_alpha(total_alpha_by_netuid[candidate_netuid], candidate_netuid),
-            format_alpha(locked_rao, candidate_netuid) if locked_rao else "—",
-            format_alpha(available_rao, candidate_netuid),
-            mode,
-        )
-
-    console.print(table)
-    console.print()
-    selected = Prompt.ask(
-        "Enter netuid to lock",
-        choices=[str(candidate) for candidate in candidates],
-        show_choices=True,
+    existing_lock = locks_by_netuid.get(netuid)
+    targets_owner_hotkey = existing_lock is not None and is_subnet_owner_hotkey_lock(
+        existing_lock.hotkey,
+        owner_hotkeys_by_netuid.get(netuid),
     )
-    console.print()
 
-    return int(selected)
+    rolled = rolled_existing_lock(
+        existing=existing_lock,
+        current_block=current_block,
+        unlock_rate=unlock_rate,
+        maturity_rate=maturity_rate,
+        owner_lock=targets_owner_hotkey,
+    )
+
+    locked_rao = rolled.locked_mass if rolled is not None else 0
+    available_rao = available_to_unstake(total_alpha_by_netuid[netuid], locked_rao)
+    mode = (
+        "perpetual"
+        if existing_lock is not None and existing_lock.is_perpetual
+        else "decaying"
+        if existing_lock is not None
+        else "—"
+    )
+
+    table.add_row(
+        str(netuid),
+        format_alpha(total_alpha_by_netuid[netuid], netuid),
+        format_alpha(locked_rao, netuid) if locked_rao else "—",
+        format_alpha(available_rao, netuid),
+        mode,
+    )
+    console.print(table)
 
 
 def _prompt_hotkey(
