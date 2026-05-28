@@ -103,6 +103,7 @@ from bittensor_cli.src.commands.stake import (
     add as add_stake,
     remove as remove_stake,
     claim as claim_stake,
+    lock as lock_stake,
     wizard as stake_wizard,
 )
 from bittensor_cli.src.commands.subnets import (
@@ -1140,6 +1141,21 @@ class CLIManager:
         children_app.command("set")(self.stake_set_children)
         children_app.command("revoke")(self.stake_revoke_children)
         children_app.command("take")(self.stake_childkey_take)
+
+        # stake-lock commands (conviction)
+        lock_app = typer.Typer()
+        self.stake_app.add_typer(
+            lock_app,
+            name="lock",
+            short_help="Conviction lock commands",
+            rich_help_panel=HELP_PANELS["STAKE"]["LOCK"],
+            no_args_is_help=True,
+        )
+        lock_app.command("add")(self.stake_lock_add)
+        lock_app.command("move")(self.stake_lock_move)
+        lock_app.command("perpetual")(self.stake_lock_perpetual)
+        lock_app.command("list")(self.stake_lock_list)
+        lock_app.command("conviction")(self.stake_lock_conviction)
 
         # subnet mechanism commands
         self.subnet_mechanisms_app.command(
@@ -6350,6 +6366,311 @@ class CLIManager:
                 quiet=quiet,
                 json_output=json_output,
                 verbose=verbose,
+            )
+        )
+
+    def stake_lock_add(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        hotkey_ss58: Optional[str] = typer.Option(
+            None,
+            "--hotkey-ss58",
+            "--to",
+            help="SS58 address of the hotkey to lock stake on. Defaults to the wallet hotkey.",
+        ),
+        amount: float = typer.Option(
+            0.0,
+            "--amount",
+            help="Amount of alpha (in TAO units of the subnet) to lock.",
+        ),
+        proxy: Optional[str] = Options.proxy,
+        period: int = Options.period,
+        mev_protection: bool = Options.mev_protection,
+        prompt: bool = Options.prompt,
+        decline: bool = Options.decline,
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        Lock alpha stake on a hotkey within a subnet to start accruing conviction.
+
+        A coldkey can hold at most one lock per subnet. Locking on a different hotkey while
+        a lock already exists will be rejected; use `btcli stake lock move` to relocate it.
+
+        EXAMPLES
+
+        Lock 5 alpha on the wallet's hotkey in subnet 1:
+            [green]$[/green] btcli stake lock add --netuid 1 --amount 5
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt, decline)
+        proxy = self.is_valid_proxy_name_or_ss58(proxy, False)
+
+        if hotkey_ss58 is not None:
+            if not is_valid_ss58_address(hotkey_ss58):
+                print_error(f"Invalid hotkey ss58 address: {hotkey_ss58}")
+                raise typer.Exit(1)
+            wallet = self.wallet_ask(
+                wallet_name, wallet_path, wallet_hotkey, ask_for=[WO.NAME, WO.PATH]
+            )
+            target_hotkey = hotkey_ss58
+        else:
+            wallet = self.wallet_ask(
+                wallet_name,
+                wallet_path,
+                wallet_hotkey,
+                ask_for=[WO.NAME, WO.PATH, WO.HOTKEY],
+                validate=WV.WALLET_AND_HOTKEY,
+            )
+            target_hotkey = get_hotkey_pub_ss58(wallet)
+
+        if not amount:
+            amount = FloatPrompt.ask(
+                f"Amount of alpha to [{COLORS.G.SUBHEAD_MAIN}]lock on netuid {netuid}"
+            )
+        if amount <= 0:
+            print_error(f"You entered an incorrect lock amount: {amount}")
+            raise typer.Exit(1)
+
+        result, ext_id = self._run_command(
+            lock_stake.lock_stake(
+                wallet=wallet,
+                subtensor=self.initialize_chain(network),
+                hotkey_ss58=target_hotkey,
+                netuid=netuid,
+                amount=amount,
+                era=period,
+                prompt=prompt,
+                decline=decline,
+                quiet=quiet,
+                proxy=proxy,
+                mev_protection=mev_protection,
+                json_output=json_output,
+            )
+        )
+        if json_output and not result:
+            json_console.print(
+                json.dumps({"success": False, "extrinsic_identifier": ext_id or None})
+            )
+        return result
+
+    def stake_lock_move(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        destination_hotkey: Optional[str] = typer.Option(
+            None,
+            "--to",
+            "--dest-ss58",
+            "--dest",
+            help="Destination hotkey SS58 to move the existing lock to.",
+        ),
+        proxy: Optional[str] = Options.proxy,
+        period: int = Options.period,
+        mev_protection: bool = Options.mev_protection,
+        prompt: bool = Options.prompt,
+        decline: bool = Options.decline,
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        Move an existing lock to a different hotkey on the same subnet.
+
+        EXAMPLES
+
+        Move the current lock on netuid 1 to a new hotkey:
+            [green]$[/green] btcli stake lock move --netuid 1 --to 5Fxxx...
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt, decline)
+        proxy = self.is_valid_proxy_name_or_ss58(proxy, False)
+
+        if destination_hotkey is None:
+            destination_hotkey = Prompt.ask(
+                "Enter the [blue]destination hotkey ss58[/blue] to move the lock to"
+            )
+        if not is_valid_ss58_address(destination_hotkey):
+            print_error(
+                f"Invalid destination hotkey ss58 address: {destination_hotkey}"
+            )
+            raise typer.Exit(1)
+
+        wallet = self.wallet_ask(
+            wallet_name, wallet_path, wallet_hotkey, ask_for=[WO.NAME, WO.PATH]
+        )
+
+        result, ext_id = self._run_command(
+            lock_stake.move_lock(
+                wallet=wallet,
+                subtensor=self.initialize_chain(network),
+                destination_hotkey_ss58=destination_hotkey,
+                netuid=netuid,
+                era=period,
+                prompt=prompt,
+                decline=decline,
+                quiet=quiet,
+                proxy=proxy,
+                mev_protection=mev_protection,
+                json_output=json_output,
+            )
+        )
+        if json_output and not result:
+            json_console.print(
+                json.dumps({"success": False, "extrinsic_identifier": ext_id or None})
+            )
+        return result
+
+    def stake_lock_perpetual(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        enabled: bool = typer.Option(
+            True,
+            "--enable/--disable",
+            help="Enable (non-decaying) or disable (resume decay) the perpetual lock flag.",
+        ),
+        proxy: Optional[str] = Options.proxy,
+        period: int = Options.period,
+        prompt: bool = Options.prompt,
+        decline: bool = Options.decline,
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        Toggle the perpetual (non-decaying) lock flag for the caller's lock on a subnet.
+
+        When enabled, the lock does not decay over time. When disabled, normal decay resumes.
+
+        EXAMPLES
+
+        Make the lock on netuid 1 perpetual:
+            [green]$[/green] btcli stake lock perpetual --netuid 1 --enable
+
+        Resume normal decay:
+            [green]$[/green] btcli stake lock perpetual --netuid 1 --disable
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt, decline)
+        proxy = self.is_valid_proxy_name_or_ss58(proxy, False)
+
+        wallet = self.wallet_ask(
+            wallet_name, wallet_path, wallet_hotkey, ask_for=[WO.NAME, WO.PATH]
+        )
+
+        result, ext_id = self._run_command(
+            lock_stake.set_perpetual_lock(
+                wallet=wallet,
+                subtensor=self.initialize_chain(network),
+                netuid=netuid,
+                enabled=enabled,
+                era=period,
+                prompt=prompt,
+                decline=decline,
+                quiet=quiet,
+                proxy=proxy,
+                json_output=json_output,
+            )
+        )
+        if json_output and not result:
+            json_console.print(
+                json.dumps({"success": False, "extrinsic_identifier": ext_id or None})
+            )
+        return result
+
+    def stake_lock_list(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        coldkey_ss58: Optional[str] = typer.Option(
+            None,
+            "--coldkey-ss58",
+            "--ss58",
+            help="SS58 address of the coldkey to inspect. Defaults to the wallet coldkey.",
+        ),
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        Show all locks for a coldkey on a subnet, including conviction and decay state.
+
+        EXAMPLES
+
+        Inspect the wallet's locks on netuid 1:
+            [green]$[/green] btcli stake lock list --netuid 1
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt=False)
+
+        if coldkey_ss58 is not None:
+            if not is_valid_ss58_address(coldkey_ss58):
+                print_error(f"Invalid coldkey ss58 address: {coldkey_ss58}")
+                raise typer.Exit(1)
+            target_coldkey = coldkey_ss58
+        else:
+            wallet = self.wallet_ask(
+                wallet_name, wallet_path, wallet_hotkey, ask_for=[WO.NAME, WO.PATH]
+            )
+            target_coldkey = wallet.coldkeypub.ss58_address
+
+        return self._run_command(
+            lock_stake.list_locks(
+                subtensor=self.initialize_chain(network),
+                coldkey_ss58=target_coldkey,
+                netuid=netuid,
+                json_output=json_output,
+            )
+        )
+
+    def stake_lock_conviction(
+        self,
+        network: Optional[list[str]] = Options.network,
+        netuid: int = Options.netuid,
+        hotkey_ss58: Optional[str] = typer.Option(
+            None,
+            "--hotkey-ss58",
+            "--hotkey",
+            help="SS58 address of the hotkey whose conviction to query. "
+            "If omitted, only the subnet king is shown.",
+        ),
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        Show a hotkey's conviction score and identify the subnet "king" (most-convicted hotkey).
+
+        EXAMPLES
+
+        Conviction of a specific hotkey on netuid 1:
+            [green]$[/green] btcli stake lock conviction --netuid 1 --hotkey-ss58 5Fxxx...
+
+        Just the subnet king on netuid 1:
+            [green]$[/green] btcli stake lock conviction --netuid 1
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt=False)
+        if hotkey_ss58 is not None and not is_valid_ss58_address(hotkey_ss58):
+            print_error(f"Invalid hotkey ss58 address: {hotkey_ss58}")
+            raise typer.Exit(1)
+
+        return self._run_command(
+            lock_stake.show_conviction(
+                subtensor=self.initialize_chain(network),
+                netuid=netuid,
+                hotkey_ss58=hotkey_ss58,
+                json_output=json_output,
             )
         )
 
