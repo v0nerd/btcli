@@ -600,16 +600,19 @@ async def move_stake(
     # error is surfaced from the same round trip as the balance fetches
     # rather than as a separate sequential RPC.
     block_hash = await subtensor.substrate.get_chain_head()
-    (
-        hotkey_existence,
-        coldkey_stakes,
-        origin_lock,
-    ) = await asyncio.gather(
+    is_cross_subnet = origin_netuid != destination_netuid
+    hotkey_existence, coldkey_stakes = await asyncio.gather(
         subtensor.do_hotkeys_exist(
             [origin_hotkey, destination_hotkey], block_hash=block_hash
         ),
         subtensor.get_stake_for_coldkey(coldkey_ss58, block_hash=block_hash),
-        subtensor.get_coldkey_lock(coldkey_ss58, origin_netuid, block_hash=block_hash),
+    )
+    origin_lock = (
+        await subtensor.get_coldkey_lock(
+            coldkey_ss58, origin_netuid, block_hash=block_hash
+        )
+        if is_cross_subnet
+        else None
     )
     coldkey_stakes = coldkey_stakes or []
     origin_stake_balance = _stake_on(coldkey_stakes, origin_hotkey, origin_netuid)
@@ -658,7 +661,6 @@ async def move_stake(
     )
 
     # Cross-subnet effective: max is stake − rolled locked_mass;
-    is_cross_subnet = origin_netuid != destination_netuid
     locked_rao = (
         origin_lock.locked_mass if (is_cross_subnet and origin_lock is not None) else 0
     )

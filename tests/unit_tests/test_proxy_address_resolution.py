@@ -54,8 +54,9 @@ async def test_move_stake_uses_proxy_for_stake_lookup(mock_wallet, mock_subtenso
             proxy=PROXY_SS58,
             mev_protection=False,
         )
-    for call in mock_subtensor.get_stake.call_args_list:
-        assert call.kwargs["coldkey_ss58"] == PROXY_SS58
+    mock_subtensor.get_stake_for_coldkey.assert_any_await(
+        PROXY_SS58, block_hash="0xabc123"
+    )
 
 
 @pytest.mark.asyncio
