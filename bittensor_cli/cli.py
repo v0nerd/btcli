@@ -4733,7 +4733,6 @@ class CLIManager:
                 )
                 coldkey_ss58 = wallet.coldkeypub.ss58_address
 
-
         return self._run_command(
             locks_list.stake_locks(
                 subtensor=self.initialize_chain(network),

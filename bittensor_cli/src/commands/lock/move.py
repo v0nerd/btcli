@@ -75,9 +75,7 @@ async def lock_move(
         current_block_,
         owner_hotkey,
     ) = await asyncio.gather(
-        subtensor.get_coldkey_locks(
-            coldkey_ss58=coldkey_ss58, block_hash=block_hash
-        ),
+        subtensor.get_coldkey_locks(coldkey_ss58=coldkey_ss58, block_hash=block_hash),
         subtensor.get_lock_rates(block_hash=block_hash),
         subtensor.substrate.get_block_number(block_hash=block_hash),
         get_subnet_owner_hotkey(
@@ -124,7 +122,9 @@ async def lock_move(
                 return False
 
     if not is_valid_ss58_address(destination_hotkey_ss58):
-        print_error(f"Invalid destination hotkey SS58 address: {destination_hotkey_ss58}")
+        print_error(
+            f"Invalid destination hotkey SS58 address: {destination_hotkey_ss58}"
+        )
         return False
 
     if origin_hotkey == destination_hotkey_ss58:
@@ -157,7 +157,9 @@ async def lock_move(
         owner_lock=origin_targets_owner_hotkey,
     )
     if rolled is None:
-        print_error("No lock to move after roll-forward. Aborted, nothing was submitted.")
+        print_error(
+            "No lock to move after roll-forward. Aborted, nothing was submitted."
+        )
         return False
 
     moved_lock = LockState(

@@ -82,9 +82,8 @@ async def lock_mode(
     target_is_perpetual = (
         normalized_mode == "perpetual" if normalized_mode is not None else None
     )
-    active_owner_lock = (
-        active_lock is not None
-        and is_subnet_owner_hotkey_lock(active_lock.hotkey, owner_hotkey)
+    active_owner_lock = active_lock is not None and is_subnet_owner_hotkey_lock(
+        active_lock.hotkey, owner_hotkey
     )
 
     rolled_lock = rolled_existing_lock(
@@ -218,9 +217,13 @@ def _print_lock_mode_status(
             "alpha locked until switched back to decaying.[/dim]"
         )
     elif target_is_perpetual:
-        console.print("[dim]Changing to perpetual stops locked alpha from decaying.[/dim]")
+        console.print(
+            "[dim]Changing to perpetual stops locked alpha from decaying.[/dim]"
+        )
     else:
-        console.print("[dim]Changing to decaying lets locked alpha decay over time.[/dim]")
+        console.print(
+            "[dim]Changing to decaying lets locked alpha decay over time.[/dim]"
+        )
     console.print()
 
 

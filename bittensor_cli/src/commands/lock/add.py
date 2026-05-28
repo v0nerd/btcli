@@ -43,9 +43,7 @@ if TYPE_CHECKING:
 
 
 PROJECTION_BUCKETS_DAYS = (30, 90, 365)
-GRAPH_BUCKETS_DAYS = tuple(
-    sorted(set(range(0, 366, 7)).union(PROJECTION_BUCKETS_DAYS))
-)
+GRAPH_BUCKETS_DAYS = tuple(sorted(set(range(0, 366, 7)).union(PROJECTION_BUCKETS_DAYS)))
 
 
 @dataclass(frozen=True)
@@ -174,9 +172,7 @@ async def lock_add(
     )
 
     current_locked_rao = (
-        rolled_existing_lock_state.locked_mass
-        if rolled_existing_lock_state
-        else 0
+        rolled_existing_lock_state.locked_mass if rolled_existing_lock_state else 0
     )
     available_to_lock_rao = available_to_unstake(
         total_alpha_rao=total_alpha_rao,
@@ -218,9 +214,10 @@ async def lock_add(
     mode_change_needed = False
     if existing_lock is not None:
         selected_is_perpetual = existing_lock.is_perpetual
-        if normalized_mode is not None and (
-            normalized_mode == "perpetual"
-        ) != selected_is_perpetual:
+        if (
+            normalized_mode is not None
+            and (normalized_mode == "perpetual") != selected_is_perpetual
+        ):
             print_error(
                 "This subnet already has an active lock. `btcli lock add` "
                 "will not change its mode during a top-up.\n"
@@ -399,9 +396,7 @@ def _prompt_netuid(
     maturity_rate: int,
 ) -> Optional[int]:
     candidates = [
-        netuid
-        for netuid, total in sorted(total_alpha_by_netuid.items())
-        if total > 0
+        netuid for netuid, total in sorted(total_alpha_by_netuid.items()) if total > 0
     ]
     if not candidates:
         print_error("No subnet stake found for this coldkey.")
@@ -473,7 +468,7 @@ def _prompt_hotkey(
     netuid: int,
     *,
     title: str = "Choose Lock Hotkey",
-    prompt_text: str = "Enter hotkey index or hotkey SS58",
+    prompt_text: str = "Enter hotkey index or a valid hotkey SS58",
     raw_prompt: str = "Enter hotkey SS58 to lock to",
     empty_message: Optional[str] = None,
 ) -> Optional[str]:
@@ -502,6 +497,7 @@ def _prompt_hotkey(
             position.hotkey,
         )
     console.print(table)
+    console.print("\n")
 
     while True:
         prompt_kwargs = {"default": "0"} if len(subnet_positions) == 1 else {}
@@ -556,7 +552,9 @@ def _prompt_lock_amount(max_amount_rao: int, netuid: int) -> Optional[int]:
             console.print("[red]Amount must be greater than 0.[/red]")
             continue
         if amount.rao > max_amount_rao:
-            console.print(f"[red]Amount exceeds available lock amount of {max_amount}.[/red]")
+            console.print(
+                f"[red]Amount exceeds available lock amount of {max_amount}.[/red]"
+            )
             continue
         return int(amount.rao)
 
@@ -765,7 +763,8 @@ def _print_lock_add_json(preview: _LockAddPreview) -> None:
                 "projected_freed_rao": preview.projected_freed_rao,
                 "projected_locked_rao": preview.projected_locked_rao,
                 "projected_conviction_rao": {
-                    day: str(value) for day, value in preview.projected_conviction.items()
+                    day: str(value)
+                    for day, value in preview.projected_conviction.items()
                 },
                 "mode_change_needed": preview.mode_change_needed,
             }

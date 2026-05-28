@@ -60,9 +60,7 @@ async def stake_locks(
         current_block_number,
         all_stakes,
     ) = await asyncio.gather(
-        subtensor.get_coldkey_locks(
-            coldkey_ss58=coldkey_ss58, block_hash=block_hash
-        ),
+        subtensor.get_coldkey_locks(coldkey_ss58=coldkey_ss58, block_hash=block_hash),
         subtensor.get_lock_rates(block_hash=block_hash),
         subtensor.substrate.get_block_number(block_hash=block_hash),
         subtensor.get_stake_for_coldkey(
@@ -228,9 +226,7 @@ def _print_table(
     verbose: bool,
 ) -> None:
     coldkey_cell = (
-        coldkey_ss58
-        if verbose
-        else f"{coldkey_ss58[:6]}...{coldkey_ss58[-6:]}"
+        coldkey_ss58 if verbose else f"{coldkey_ss58[:6]}...{coldkey_ss58[-6:]}"
     )
 
     table = create_table(
@@ -282,9 +278,7 @@ def _print_table(
             )
             maturity = f"{pct:.0f}%"
 
-        hotkey_cell = (
-            row.hotkey if verbose else f"{row.hotkey[:6]}...{row.hotkey[-6:]}"
-        )
+        hotkey_cell = row.hotkey if verbose else f"{row.hotkey[:6]}...{row.hotkey[-6:]}"
         note = "owner hotkey" if row.is_owner_hotkey_lock else ""
 
         table.add_row(
