@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from decimal import Decimal
 from typing import Optional, Any, Union, TypedDict, Iterable, Literal
 
 from async_substrate_interface import AsyncExtrinsicReceipt
@@ -18,6 +19,7 @@ import typer
 import websockets
 
 from bittensor_cli.src.bittensor.chain_data import (
+    ColdkeySubnetLock,
     DelegateInfo,
     StakeInfo,
     NeuronInfoLite,
@@ -29,6 +31,8 @@ from bittensor_cli.src.bittensor.chain_data import (
     SimSwapResult,
     CrowdloanData,
     ColdkeySwapAnnouncementInfo,
+    LockState,
+    SubnetLockAggregates,
 )
 from bittensor_cli.src.bittensor.balances import Balance, fixed_to_float
 from bittensor_cli.src import Constants, defaults, TYPE_REGISTRY
@@ -658,6 +662,275 @@ class SubtensorInterface:
             return None
 
         return result
+
+    async def get_coldkey_lock(
+        self,
+        coldkey_ss58: str,
+        netuid: int,
+        block_hash: Optional[str] = None,
+    ) -> Optional[LockState]:
+        """Read the chain-rolled lock for one coldkey on one subnet.
+
+        Args:
+            coldkey_ss58: Coldkey SS58 address to query.
+            netuid: Subnet UID to query.
+            block_hash: Block to read at. None reads the current head.
+
+        Returns:
+            Rolled LockState for the coldkey on the subnet, or None if no lock exists.
+        """
+        result = await self.query_runtime_api(
+            runtime_api="StakeInfoRuntimeApi",
+            method="get_coldkey_lock",
+            params=[coldkey_ss58, netuid],
+            block_hash=block_hash,
+        )
+        if result is None:
+            return None
+        return LockState.from_any(result)
+
+    async def get_coldkey_locks(
+        self,
+        coldkey_ss58: str,
+        block_hash: Optional[str] = None,
+    ) -> dict[int, ColdkeySubnetLock]:
+        """Read every stake-lock owned by a coldkey with lock modes.
+
+        Args:
+            coldkey_ss58: Coldkey SS58 address to read locks for.
+            block_hash: Block to read at. `None` reads the current head.
+
+        Returns:
+            Map from netuid to that coldkey's `ColdkeySubnetLock` on the subnet.
+
+        Note:
+            Returned LockState values are storage state; callers roll them forward
+            with the resolved lock mode.
+        """
+        locks_query, flags_query = await asyncio.gather(
+            self.substrate.query_map(
+                module="SubtensorModule",
+                storage_function="Lock",
+                params=[coldkey_ss58],
+                block_hash=block_hash,
+                fully_exhaust=True,
+                page_size=1_000,
+            ),
+            self.substrate.query_map(
+                module="SubtensorModule",
+                storage_function="DecayingLock",
+                params=[coldkey_ss58],
+                block_hash=block_hash,
+                fully_exhaust=True,
+                page_size=1_000,
+            ),
+        )
+
+        perpetual_netuids: set[int] = {
+            netuid for netuid, value in flags_query.records if value is False
+        }
+        locks_by_subnet: dict[int, ColdkeySubnetLock] = {}
+        for key_tuple, raw_lock in locks_query.records:
+            netuid, hotkey = key_tuple
+            locks_by_subnet[netuid] = ColdkeySubnetLock(
+                netuid=netuid,
+                hotkey=hotkey,
+                lock=LockState.from_any(raw_lock),
+                is_perpetual=netuid in perpetual_netuids,
+            )
+
+        return locks_by_subnet
+
+    async def get_coldkey_lock_is_perpetual(
+        self,
+        coldkey_ss58: str,
+        netuid: int,
+        block_hash: Optional[str] = None,
+    ) -> bool:
+        """Read the stored lock mode for one coldkey on one subnet.
+
+        Args:
+            coldkey_ss58: Coldkey SS58 address to query.
+            netuid: Subnet UID to query.
+            block_hash: Block to read at. None reads the current head.
+
+        Returns:
+            True only when DecayingLock(coldkey, netuid) is present with value
+            false. Missing storage means decaying, which is the chain default.
+        """
+        raw = await self.substrate.query(
+            module="SubtensorModule",
+            storage_function="DecayingLock",
+            params=[coldkey_ss58, netuid],
+            block_hash=block_hash,
+        )
+        value = raw.value if hasattr(raw, "value") else raw
+        return value is False
+
+    async def get_hotkey_conviction(
+        self,
+        hotkey_ss58: str,
+        netuid: int,
+        block_hash: Optional[str] = None,
+    ) -> Decimal:
+        """Read chain-rolled aggregate conviction for a hotkey on a subnet.
+
+        Args:
+            hotkey_ss58: Hotkey SS58 address to query.
+            netuid: Subnet UID to query.
+            block_hash: Block to read at. None reads the current head.
+
+        Returns:
+            Rolled aggregate conviction as Decimal alpha-rao equivalent.
+        """
+        result = await self.query_runtime_api(
+            runtime_api="StakeInfoRuntimeApi",
+            method="get_hotkey_conviction",
+            params=[hotkey_ss58, netuid],
+            block_hash=block_hash,
+        )
+        if result is None:
+            return Decimal(0)
+        return Decimal(str(fixed_to_float(result)))
+
+    async def get_most_convicted_hotkey_on_subnet(
+        self,
+        netuid: int,
+        block_hash: Optional[str] = None,
+    ) -> Optional[str]:
+        """Read the hotkey with the highest chain-rolled conviction on a subnet.
+
+        Args:
+            netuid: Subnet UID to query.
+            block_hash: Block to read at. None reads the current head.
+
+        Returns:
+            Hotkey SS58 address with the highest aggregate conviction, or None when
+            the runtime returns no winner.
+        """
+        result = await self.query_runtime_api(
+            runtime_api="StakeInfoRuntimeApi",
+            method="get_most_convicted_hotkey_on_subnet",
+            params=[netuid],
+            block_hash=block_hash,
+        )
+        if result is None:
+            return None
+        return result
+
+    async def get_lock_rates(self, block_hash: Optional[str] = None) -> tuple[int, int]:
+        """
+        Read stake-lock timing parameters from chain storage.
+
+        Args:
+            block_hash: Optional block hash to query at. If omitted, queries the
+                current chain head.
+
+        Returns:
+            A pair of block counts: unlock_rate and maturity_rate. unlock_rate controls
+            locked-mass decay, and maturity_rate controls conviction decay/maturation.
+        """
+        unlock_rate, maturity_rate = await asyncio.gather(
+            self.substrate.query(
+                module="SubtensorModule",
+                storage_function="UnlockRate",
+                params=[],
+                block_hash=block_hash,
+            ),
+            self.substrate.query(
+                module="SubtensorModule",
+                storage_function="MaturityRate",
+                params=[],
+                block_hash=block_hash,
+            ),
+        )
+        return (
+            int(unlock_rate.value if hasattr(unlock_rate, "value") else unlock_rate),
+            int(maturity_rate.value if hasattr(maturity_rate, "value") else maturity_rate),
+        )
+
+    async def get_subnet_lock_aggregates(
+        self,
+        netuid: int,
+        block_hash: Optional[str] = None,
+    ) -> "SubnetLockAggregates":
+        """
+        Read subnet-level aggregate lock buckets.
+
+        Fetches the four aggregate lock storage buckets for one subnet: `HotkeyLock`,
+        `DecayingHotkeyLock`, `OwnerLock`, and `DecayingOwnerLock`.
+
+        Args:
+            netuid: Subnet UID to query.
+            block_hash: Optional block hash to query at. If omitted, queries the
+                current chain head.
+
+        Returns:
+            `SubnetLockAggregates` containing decoded `LockState` values for all populated
+            aggregate buckets.
+
+        Note: Manually rolls up locked state to present.
+        """
+        (
+            perpetual_query,
+            decaying_query,
+            owner_perpetual_raw,
+            owner_decaying_raw,
+        ) = await asyncio.gather(
+            self.substrate.query_map(
+                module="SubtensorModule",
+                storage_function="HotkeyLock",
+                params=[netuid],
+                block_hash=block_hash,
+                fully_exhaust=True,
+                page_size=1_000,
+            ),
+            self.substrate.query_map(
+                module="SubtensorModule",
+                storage_function="DecayingHotkeyLock",
+                params=[netuid],
+                block_hash=block_hash,
+                fully_exhaust=True,
+                page_size=1_000,
+            ),
+            self.substrate.query(
+                module="SubtensorModule",
+                storage_function="OwnerLock",
+                params=[netuid],
+                block_hash=block_hash,
+            ),
+            self.substrate.query(
+                module="SubtensorModule",
+                storage_function="DecayingOwnerLock",
+                params=[netuid],
+                block_hash=block_hash,
+            ),
+        )
+
+        hotkey_perpetual = {
+            hotkey: LockState.from_any(raw)
+            for hotkey, raw in perpetual_query.records
+        }
+        hotkey_decaying = {
+            hotkey: LockState.from_any(raw)
+            for hotkey, raw in decaying_query.records
+        }
+        owner_perpetual_lock = (
+            LockState.from_any(owner_perpetual_raw.value)
+            if owner_perpetual_raw.value is not None
+            else None
+        )
+        owner_decaying_lock = (
+            LockState.from_any(owner_decaying_raw.value)
+            if owner_decaying_raw.value is not None
+            else None
+        )
+        return SubnetLockAggregates(
+            hotkey_perpetual=hotkey_perpetual,
+            hotkey_decaying=hotkey_decaying,
+            owner_perp_lock=owner_perpetual_lock,
+            owner_decay_lock=owner_decaying_lock,
+        )
 
     async def filter_netuids_by_registered_hotkeys(
         self,
