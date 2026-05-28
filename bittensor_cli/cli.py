@@ -1149,6 +1149,7 @@ class CLIManager:
 
         # lock + conviction commands
         self.lock_app.command("list")(self.lock_list)
+        self.lock_app.command("show")(self.lock_show)
         self.lock_app.command("add")(self.lock_add)
         self.lock_app.command("mode")(self.lock_mode)
         self.lock_app.command("move")(self.lock_move)
@@ -4740,6 +4741,68 @@ class CLIManager:
                 netuid=netuid,
                 json_output=json_output,
                 verbose=verbose,
+            )
+        )
+
+    def lock_show(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        wallet_path: Optional[str] = Options.wallet_path,
+        coldkey_ss58: Optional[str] = Options.coldkey_ss58,
+        netuid: Optional[int] = Options.netuid_not_req,
+        show_graph: bool = typer.Option(
+            True,
+            "--graph/--no-graph",
+            help="Show or hide the current lock projection graph.",
+        ),
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+    ):
+        """
+        View one active stake lock and its local projection.
+
+        If --netuid is omitted, btcli prompts from the coldkey's active lock
+        netuids.
+        """
+        self.verbosity_handler(quiet, verbose, json_output, not json_output)
+
+        wallet = None
+        if coldkey_ss58:
+            if not is_valid_ss58_address(coldkey_ss58):
+                print_error("You entered an invalid ss58 address")
+                raise typer.Exit(1)
+        else:
+            if wallet_name:
+                coldkey_or_ss58 = wallet_name
+            else:
+                coldkey_or_ss58 = Prompt.ask(
+                    "Enter the [blue]wallet name[/blue] or [blue]coldkey ss58 address[/blue]",
+                    default=self.config.get("wallet_name") or defaults.wallet.name,
+                )
+
+            if is_valid_ss58_address(coldkey_or_ss58):
+                coldkey_ss58 = coldkey_or_ss58
+            else:
+                wallet_name = coldkey_or_ss58 if coldkey_or_ss58 else wallet_name
+                wallet = self.wallet_ask(
+                    wallet_name,
+                    wallet_path,
+                    wallet_hotkey,
+                    ask_for=[WO.NAME, WO.PATH],
+                )
+                coldkey_ss58 = wallet.coldkeypub.ss58_address
+
+        return self._run_command(
+            locks_list.stake_lock_show(
+                subtensor=self.initialize_chain(network),
+                coldkey_ss58=coldkey_ss58,
+                netuid=netuid,
+                json_output=json_output,
+                verbose=verbose,
+                show_graph=show_graph and not json_output,
             )
         )
 
