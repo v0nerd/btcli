@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 
+from rich.prompt import Prompt
+
 from bittensor_cli.src import COLORS
 from bittensor_cli.src.bittensor.balances import Balance
 from bittensor_cli.src.bittensor.chain_data import ColdkeySubnetLock, StakeInfo
@@ -18,15 +20,19 @@ from bittensor_cli.src.bittensor.locks import (
 from bittensor_cli.src.bittensor.utils import (
     console,
     create_table,
-    millify_tao,
+    group_subnets,
     json_console,
+    millify_tao,
+    print_error,
 )
+from bittensor_cli.src.commands.lock.common import print_lock_projection_graph
 
 if TYPE_CHECKING:
     from bittensor_cli.src.bittensor.subtensor_interface import SubtensorInterface
 
 
 PROJECTION_BUCKETS_DAYS = (30, 90, 365)
+GRAPH_BUCKETS_DAYS = tuple(sorted(set(range(0, 366, 7)).union(PROJECTION_BUCKETS_DAYS)))
 
 
 def _perpetual_conviction_pct_of_cap(conviction: Decimal, locked_mass: int) -> float:
@@ -57,11 +63,95 @@ async def stake_locks(
     if coldkey_ss58 is None:
         raise ValueError("coldkey_ss58 is required")
 
+    rows, current_block, unlock_rate, maturity_rate = await _load_lock_rows(
+        subtensor=subtensor,
+        coldkey_ss58=coldkey_ss58,
+        netuid=netuid,
+    )
+
+    if json_output:
+        _print_json(rows, current_block, unlock_rate, maturity_rate)
+        return
+
+    if not rows:
+        console.print("[dim]No active stake locks for this coldkey.[/dim]")
+        return
+
+    _print_table(
+        rows,
+        coldkey_ss58,
+        subtensor.network,
+        current_block,
+        unlock_rate,
+        maturity_rate,
+        verbose,
+    )
+
+
+async def stake_lock_show(
+    subtensor: "SubtensorInterface",
+    coldkey_ss58: Optional[str],
+    netuid: Optional[int],
+    json_output: bool,
+    verbose: bool = False,
+    show_graph: bool = True,
+) -> None:
+    """Display one active stake lock and its local projection."""
+    if coldkey_ss58 is None:
+        raise ValueError("coldkey_ss58 is required")
+
+    rows, current_block, unlock_rate, maturity_rate = await _load_lock_rows(
+        subtensor=subtensor,
+        coldkey_ss58=coldkey_ss58,
+        netuid=netuid,
+    )
+
+    if not rows:
+        if netuid is not None:
+            console.print(f"[dim]No active stake lock on netuid {netuid}.[/dim]")
+            return
+        console.print("[dim]No active stake locks for this coldkey.[/dim]")
+        return
+
+    if netuid is None:
+        if json_output:
+            print_error("Missing --netuid for JSON output.")
+            return
+        netuid = _prompt_locked_netuid(rows)
+
+    rows = [row for row in rows if row.netuid == netuid]
+    if not rows:
+        console.print(f"[dim]No active stake lock on netuid {netuid}.[/dim]")
+        return
+
+    if json_output:
+        _print_json(rows, current_block, unlock_rate, maturity_rate)
+        return
+
+    _print_table(
+        rows,
+        coldkey_ss58,
+        subtensor.network,
+        current_block,
+        unlock_rate,
+        maturity_rate,
+        verbose,
+    )
+
+    if show_graph:
+        _print_lock_row_graph(rows[0], current_block, unlock_rate, maturity_rate)
+
+
+async def _load_lock_rows(
+    subtensor: "SubtensorInterface",
+    coldkey_ss58: str,
+    netuid: Optional[int],
+) -> tuple[list[_LockRow], int, int, int]:
     block_hash = await subtensor.substrate.get_chain_head()
     (
         locks_by_netuid,
         lock_rates,
-        current_block_number,
+        current_block,
         all_stakes,
     ) = await asyncio.gather(
         subtensor.get_coldkey_locks(coldkey_ss58=coldkey_ss58, block_hash=block_hash),
@@ -85,33 +175,15 @@ async def stake_locks(
         netuids=locks_by_netuid.keys(),
         block_hash=block_hash,
     )
-    total_alpha_by_netuid = _sum_staked_alpha_by_netuid(all_stakes or [])
     rows = _build_lock_rows(
         locks_by_netuid=locks_by_netuid,
         owner_hotkeys_by_netuid=owner_hotkeys_by_netuid,
-        total_alpha_by_netuid=total_alpha_by_netuid,
-        current_block=current_block_number,
+        total_alpha_by_netuid=_sum_staked_alpha_by_netuid(all_stakes or []),
+        current_block=int(current_block),
         unlock_rate=unlock_rate,
         maturity_rate=maturity_rate,
     )
-
-    if json_output:
-        _print_json(rows, current_block_number, unlock_rate, maturity_rate)
-        return
-
-    if not rows:
-        console.print("[dim]No active stake locks for this coldkey.[/dim]")
-        return
-
-    _print_table(
-        rows,
-        coldkey_ss58,
-        subtensor.network,
-        current_block_number,
-        unlock_rate,
-        maturity_rate,
-        verbose,
-    )
+    return rows, int(current_block), unlock_rate, maturity_rate
 
 
 def _sum_staked_alpha_by_netuid(all_stakes: Iterable[StakeInfo]) -> dict[int, int]:
@@ -188,6 +260,59 @@ def _build_lock_rows(
         )
 
     return rows
+
+
+def _prompt_locked_netuid(rows: list[_LockRow]) -> int:
+    locked_netuids = sorted(row.netuid for row in rows)
+    locked_range = group_subnets(locked_netuids)
+    locked_set = set(locked_netuids)
+
+    while True:
+        selected = Prompt.ask(
+            f"Enter netuid to show [dim](locked: {locked_range})[/dim]"
+        ).strip()
+
+        try:
+            selected_netuid = int(selected)
+        except ValueError:
+            print_error("Please enter a valid netuid.")
+            continue
+
+        if selected_netuid in locked_set:
+            console.print()
+            return selected_netuid
+
+        print_error(f"Please select a locked netuid: {locked_range}")
+
+
+def _print_lock_row_graph(
+    row: _LockRow,
+    current_block: int,
+    unlock_rate: int,
+    maturity_rate: int,
+) -> None:
+    projected_locked: dict[int, int] = {}
+    projected_conviction: dict[int, Decimal] = {}
+
+    for days in GRAPH_BUCKETS_DAYS:
+        future = roll_forward_lock(
+            lock=row.rolled_lock,
+            now=current_block + days * BLOCKS_PER_DAY,
+            unlock_rate=unlock_rate,
+            maturity_rate=maturity_rate,
+            owner_lock=row.is_owner_hotkey_lock,
+            perpetual_lock=row.is_perpetual,
+        )
+        projected_locked[days] = future.locked_mass
+        projected_conviction[days] = future.conviction
+
+    print_lock_projection_graph(
+        netuid=row.netuid,
+        projected_locked_rao=projected_locked,
+        projected_conviction=projected_conviction,
+        targets_owner_hotkey=row.is_owner_hotkey_lock,
+        hint=None,
+    )
 
 
 def _format_alpha_rao(rao: int, netuid: int, verbose: bool) -> str:
