@@ -1497,12 +1497,6 @@ async def show(
             hotkey_ss58 = metagraph_info.hotkeys[idx]
             locked_split = locked_split_by_hotkey.get(hotkey_ss58)
             conv_value = conviction_by_hotkey.get(hotkey_ss58)
-            locked_cell = _format_locked_split_cell(
-                locked_split=locked_split,
-                netuid=netuid_,
-                symbol=subnet_info.symbol,
-                verbose=verbose,
-            )
             conv_cell = _format_conviction_cell(
                 conviction=conv_value,
                 netuid=netuid_,
@@ -1525,7 +1519,6 @@ async def show(
                     f"{metagraph_info.dividends[idx]:.6f}",  # Dividends
                     f"{metagraph_info.incentives[idx]:.6f}",  # Incentive
                     f"{Balance.from_tao(metagraph_info.emission[idx].tao).set_unit(netuid_).tao:.6f} {subnet_info.symbol}",  # Emissions
-                    locked_cell,  # Locked (α)
                     conv_cell,  # Conv. (α-eq)
                     f"{metagraph_info.hotkeys[idx][:6]}"
                     if not verbose
@@ -1612,12 +1605,6 @@ async def show(
             no_wrap=True,
             justify="center",
             footer=f"{emission_sum:.4f} {subnet_info.symbol}",
-        )
-        table.add_column(
-            f"Locked ({subnet_info.symbol})\n[white]Perpetual | Decay[/white]",
-            style=COLOR_PALETTE["POOLS"]["ALPHA_IN"],
-            no_wrap=True,
-            justify="center",
         )
         table.add_column(
             f"Conviction ({subnet_info.symbol}-eq)",
