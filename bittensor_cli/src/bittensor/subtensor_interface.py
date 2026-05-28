@@ -48,6 +48,7 @@ from bittensor_cli.src.bittensor.utils import (
     ProxyAnnouncements,
 )
 from scalecodec.base import ScaleType
+from scalecodec.utils.math import fixed_to_decimal
 
 GENESIS_ADDRESS = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM"
 
@@ -791,7 +792,7 @@ class SubtensorInterface:
         )
         if result is None:
             return Decimal(0)
-        return Decimal(str(fixed_to_float(result)))
+        return fixed_to_decimal(result)
 
     async def get_most_convicted_hotkey_on_subnet(
         self,
@@ -846,7 +847,11 @@ class SubtensorInterface:
         )
         return (
             int(unlock_rate.value if hasattr(unlock_rate, "value") else unlock_rate),
-            int(maturity_rate.value if hasattr(maturity_rate, "value") else maturity_rate),
+            int(
+                maturity_rate.value
+                if hasattr(maturity_rate, "value")
+                else maturity_rate
+            ),
         )
 
     async def get_subnet_lock_aggregates(
@@ -908,12 +913,10 @@ class SubtensorInterface:
         )
 
         hotkey_perpetual = {
-            hotkey: LockState.from_any(raw)
-            for hotkey, raw in perpetual_query.records
+            hotkey: LockState.from_any(raw) for hotkey, raw in perpetual_query.records
         }
         hotkey_decaying = {
-            hotkey: LockState.from_any(raw)
-            for hotkey, raw in decaying_query.records
+            hotkey: LockState.from_any(raw) for hotkey, raw in decaying_query.records
         }
         owner_perpetual_lock = (
             LockState.from_any(owner_perpetual_raw.value)

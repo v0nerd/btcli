@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional, Any, Union
 
 import netaddr
-from scalecodec.utils.math import FixedPoint
+from scalecodec.utils.math import FixedPoint, fixed_to_decimal
 from scalecodec.utils.ss58 import ss58_encode
 
 from bittensor_cli.src.bittensor.balances import Balance, fixed_to_float
@@ -128,7 +128,7 @@ class LockState:
     def from_any(cls, decoded: Any) -> "LockState":
         return cls(
             locked_mass=int(decoded["locked_mass"]),
-            conviction=Decimal(str(fixed_to_float(decoded["conviction"]))),
+            conviction=fixed_to_decimal(decoded["conviction"]),
             last_update=int(decoded["last_update"]),
         )
 
