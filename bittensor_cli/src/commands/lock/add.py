@@ -5,10 +5,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 
-import plotille
 from bittensor_wallet import Wallet
 from rich.prompt import Prompt
-from rich.text import Text
 
 from bittensor_cli.src import COLORS
 from bittensor_cli.src.bittensor.balances import Balance
@@ -35,6 +33,7 @@ from bittensor_cli.src.commands.lock.common import (
     get_subnet_owner_hotkeys,
     is_subnet_owner_hotkey_lock,
     normalize_mode,
+    print_lock_projection_graph,
     rolled_existing_lock,
     submit_lock_actions,
 )
@@ -700,75 +699,12 @@ def _print_lock_add_preview(preview: _LockAddPreview, show_graph: bool) -> None:
     )
 
     if show_graph:
-        _print_lock_add_graph(preview)
-
-
-def _alpha_float(rao: int | Decimal) -> float:
-    return float(Balance.from_rao(int(rao)).tao)
-
-
-def _graph_tick(value: float, _next_value: float) -> str:
-    if abs(value) >= 1_000:
-        return f"{value / 1_000:.1f}k"
-    if abs(value) >= 100:
-        return f"{value:.0f}"
-    if abs(value) >= 10:
-        return f"{value:.1f}"
-    return f"{value:.2f}"
-
-
-def _print_lock_add_graph(preview: _LockAddPreview) -> None:
-    """Render the local lock and conviction projection graph."""
-    days = list(GRAPH_BUCKETS_DAYS)
-    locked = [_alpha_float(preview.projected_locked_rao[day]) for day in days]
-    conviction = [_alpha_float(preview.projected_conviction[day]) for day in days]
-
-    max_y = max(locked + conviction)
-    if max_y <= 0:
-        return
-
-    fig = plotille.Figure()
-    fig.width = 60
-    fig.height = 9
-    fig.color_mode = "rgb"
-    fig.background = None
-    fig.origin = False
-    fig.x_label = plotille.color("Days", fg=(186, 233, 143), mode="rgb")
-    fig.y_label = plotille.color(
-        f"Alpha ({Balance.get_unit(preview.netuid)})",
-        fg=(186, 233, 143),
-        mode="rgb",
-    )
-    fig.x_ticks_fkt = lambda value, _next_value: f"{value:.0f}"
-    fig.y_ticks_fkt = _graph_tick
-    fig.set_x_limits(min_=0, max_=365)
-    fig.set_y_limits(min_=0, max_=max_y * 1.05)
-
-    if preview.targets_owner_hotkey:
-        fig.plot(
-            days,
-            locked,
-            label="Locked = Conviction",
-            interp="linear",
-            lc="ffd166",
+        print_lock_projection_graph(
+            netuid=preview.netuid,
+            projected_locked_rao=preview.projected_locked_rao,
+            projected_conviction=preview.projected_conviction,
+            targets_owner_hotkey=preview.targets_owner_hotkey,
         )
-    else:
-        fig.plot(days, locked, label="Locked", interp="linear", lc="d09fe9")
-        fig.plot(days, conviction, label="Conviction", interp="linear", lc="afefff")
-
-    console.print(
-        f"[{COLORS.G.HEADER}]Lock projection"
-        f"[/{COLORS.G.HEADER}] [dim](use --no-graph to hide)[/dim]"
-    )
-    console.print(Text.from_ansi(fig.show(legend=True)))
-
-    if preview.targets_owner_hotkey:
-        console.print(
-            "[dim]Owner hotkey target: one line represents both locked alpha "
-            "and conviction.[/dim]"
-        )
-
-    console.print()
 
 
 def _print_lock_add_json(preview: _LockAddPreview) -> None:
