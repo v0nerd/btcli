@@ -100,7 +100,12 @@ async def unstake(
             )
         except ValueError:
             return False
-        if unstake_all_from_hk:
+        selected_locked_netuids = [
+            selected_netuid
+            for _, _, selected_netuid in hotkeys_to_unstake_from
+            if selected_netuid in locks_by_netuid
+        ]
+        if unstake_all_from_hk and not selected_locked_netuids:
             hotkey_to_unstake_all = hotkeys_to_unstake_from[0]
             unstake_all_alpha = confirm_action(
                 "\nDo you want to:\n"
@@ -116,6 +121,11 @@ async def unstake(
                 hotkey_ss58_address=hotkey_to_unstake_all[1],
                 unstake_all_alpha=unstake_all_alpha,
                 prompt=prompt,
+            )
+        if unstake_all_from_hk:
+            console.print(
+                "[dim]Subnet-wide locks are active, so btcli will use "
+                "per-subnet unstake prompts instead of unstake_all.[/dim]"
             )
 
         if not hotkeys_to_unstake_from:
@@ -1319,6 +1329,7 @@ async def _unstake_selection(
         raise ValueError
 
     hotkey_stakes = {}
+    subnet_total_rao: dict[int, int] = {}
     for stake_info in stake_infos:
         if netuid is not None and stake_info.netuid != netuid:
             continue
@@ -1326,6 +1337,9 @@ async def _unstake_selection(
         netuid_ = stake_info.netuid
         stake_amount = stake_info.stake
         if stake_amount.tao > 0:
+            subnet_total_rao[netuid_] = subnet_total_rao.get(netuid_, 0) + int(
+                stake_amount.rao
+            )
             hotkey_stakes.setdefault(hotkey_ss58, {})[netuid_] = stake_amount
 
     if not hotkey_stakes:
@@ -1408,7 +1422,10 @@ async def _unstake_selection(
             lock = locks_by_netuid.get(netuid_)
             if lock is not None:
                 locked_b = lock.locked_balance(netuid_)
-                available_rao = max(0, int(stake_amount.rao) - lock.locked_mass)
+                subnet_available_rao = max(
+                    0, subnet_total_rao.get(netuid_, 0) - lock.locked_mass
+                )
+                available_rao = min(int(stake_amount.rao), subnet_available_rao)
                 available_b = Balance.from_rao(available_rao).set_unit(netuid_)
 
                 available_cell = (
