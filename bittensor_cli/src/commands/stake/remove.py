@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections import defaultdict
 from functools import partial
 
 from typing import TYPE_CHECKING, Optional
@@ -200,7 +201,7 @@ async def unstake(
         subnet_total_rao[nid] = subnet_total_rao.get(nid, 0) + int(stake_info.stake.rao)
 
     # Tally of alpha already allocated
-    consumed_per_netuid: dict[int, int] = {}
+    consumed_per_netuid: defaultdict[int, int] = defaultdict(int)
 
     # Flag to check if user wants to quit
     skip_remaining_subnets = False
@@ -251,9 +252,7 @@ async def unstake(
             locked_rao = lock.locked_mass if lock is not None else 0
             if lock is not None:
                 subnet_available = max(0, subnet_total_rao.get(netuid, 0) - locked_rao)
-                remaining = max(
-                    0, subnet_available - consumed_per_netuid.get(netuid, 0)
-                )
+                remaining = max(0, subnet_available - consumed_per_netuid[netuid])
                 available_rao = min(int(current_stake_balance.rao), remaining)
 
             else:
@@ -396,9 +395,7 @@ async def unstake(
 
             unstake_operations.append(base_unstake_op)
             table_rows.append(base_table_row)
-            consumed_per_netuid[netuid] = consumed_per_netuid.get(netuid, 0) + int(
-                amount_to_unstake_as_balance.rao
-            )
+            consumed_per_netuid[netuid] += int(amount_to_unstake_as_balance.rao)
 
     if not unstake_operations:
         console.print("[red]No unstake operations to perform.[/red]")
