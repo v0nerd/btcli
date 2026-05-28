@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING, Optional
 from bittensor_wallet import Wallet
 from rich.prompt import Prompt
 
-from bittensor_cli.src import COLOR_PALETTE
+from bittensor_cli.src import COLOR_PALETTE, COLORS
 from bittensor_cli.src.bittensor.balances import Balance
 from bittensor_cli.src.bittensor.extrinsics.mev_shield import (
     wait_for_extrinsic_by_hash,
 )
+from bittensor_cli.src.bittensor.locks import roll_forward_lock
 from bittensor_cli.src.bittensor.utils import (
     confirm_action,
     console,
@@ -33,6 +34,23 @@ MIN_STAKE_FEE = Balance.from_rao(50_000)
 
 
 # Helpers
+def _stake_on(stakes, hotkey_ss58: str, netuid: int) -> Balance:
+    """Stake on one (hotkey, netuid) from a coldkey's stake list; zero if none."""
+    return next(
+        (
+            stake.stake
+            for stake in stakes
+            if stake.hotkey_ss58 == hotkey_ss58 and int(stake.netuid) == netuid
+        ),
+        Balance.from_rao(0).set_unit(netuid),
+    )
+
+
+def _subnet_total_rao(stakes, netuid: int) -> int:
+    """Coldkey's total alpha (rao) on a subnet, summed across all hotkeys."""
+    return sum(int(stake.stake.rao) for stake in stakes if int(stake.netuid) == netuid)
+
+
 @dataclass(frozen=True)
 class MovementPricing:
     origin_subnet: "DynamicInfo"
@@ -584,25 +602,21 @@ async def move_stake(
     block_hash = await subtensor.substrate.get_chain_head()
     (
         hotkey_existence,
-        origin_stake_balance,
-        destination_stake_balance,
+        coldkey_stakes,
+        origin_lock,
     ) = await asyncio.gather(
         subtensor.do_hotkeys_exist(
             [origin_hotkey, destination_hotkey], block_hash=block_hash
         ),
-        subtensor.get_stake(
-            coldkey_ss58=coldkey_ss58,
-            hotkey_ss58=origin_hotkey,
-            netuid=origin_netuid,
-            block_hash=block_hash,
-        ),
-        subtensor.get_stake(
-            coldkey_ss58=coldkey_ss58,
-            hotkey_ss58=destination_hotkey,
-            netuid=destination_netuid,
-            block_hash=block_hash,
-        ),
+        subtensor.get_stake_for_coldkey(coldkey_ss58, block_hash=block_hash),
+        subtensor.get_coldkey_lock(coldkey_ss58, origin_netuid, block_hash=block_hash),
     )
+    coldkey_stakes = coldkey_stakes or []
+    origin_stake_balance = _stake_on(coldkey_stakes, origin_hotkey, origin_netuid)
+    destination_stake_balance = _stake_on(
+        coldkey_stakes, destination_hotkey, destination_netuid
+    )
+    origin_subnet_total_rao = _subnet_total_rao(coldkey_stakes, origin_netuid)
 
     missing_hotkeys = [hk for hk, exists in hotkey_existence.items() if not exists]
     if missing_hotkeys:
@@ -643,24 +657,46 @@ async def move_stake(
         f"[{COLOR_PALETTE.POOLS.TAO}]{destination_stake_balance}[/{COLOR_PALETTE.POOLS.TAO}]\n"
     )
 
+    # Cross-subnet effective: max is stake − rolled locked_mass;
+    is_cross_subnet = origin_netuid != destination_netuid
+    locked_rao = (
+        origin_lock.locked_mass if (is_cross_subnet and origin_lock is not None) else 0
+    )
+    if locked_rao > 0:
+        subnet_available = max(0, origin_subnet_total_rao - locked_rao)
+        effective_max_balance = Balance.from_rao(
+            min(int(origin_stake_balance.rao), subnet_available)
+        ).set_unit(origin_netuid)
+    else:
+        effective_max_balance = origin_stake_balance
+
     # Determine the amount we are moving.
     if amount:
         amount_to_move_as_balance = Balance.from_tao(amount)
     elif stake_all:
-        amount_to_move_as_balance = origin_stake_balance
+        amount_to_move_as_balance = effective_max_balance
     else:
         amount_to_move_as_balance, _ = prompt_stake_amount(
-            origin_stake_balance, origin_netuid, "move"
+            effective_max_balance, origin_netuid, "move"
         )
 
     # Check enough to move.
     amount_to_move_as_balance.set_unit(origin_netuid)
-    if amount_to_move_as_balance > origin_stake_balance:
-        print_error(
-            f"Not enough stake:\n"
-            f" Stake balance: [{COLOR_PALETTE.S.AMOUNT}]{origin_stake_balance}[/{COLOR_PALETTE.S.AMOUNT}]"
-            f" < Moving amount: [{COLOR_PALETTE.S.AMOUNT}]{amount_to_move_as_balance}[/{COLOR_PALETTE.S.AMOUNT}]"
-        )
+    if amount_to_move_as_balance > effective_max_balance:
+        if locked_rao > 0:
+            locked_balance = Balance.from_rao(locked_rao).set_unit(origin_netuid)
+            print_error(
+                f"Can't move {amount_to_move_as_balance} from netuid "
+                f"{origin_netuid}: only {effective_max_balance} available — a "
+                f"subnet-wide lock of {locked_balance} applies across your "
+                f"stake on this subnet."
+            )
+        else:
+            print_error(
+                f"Not enough stake:\n"
+                f" Stake balance: [{COLORS.S.AMOUNT}]{origin_stake_balance}[/{COLORS.S.AMOUNT}]"
+                f" < Moving amount: [{COLORS.S.AMOUNT}]{amount_to_move_as_balance}[/{COLORS.S.AMOUNT}]"
+            )
         return False, ""
 
     call = await subtensor.substrate.compose_call(
@@ -785,6 +821,88 @@ async def move_stake(
             return False, ""
 
 
+def _confirm_lock_follow_or_refuse(
+    *,
+    origin_lock,
+    dest_lock,
+    locked_rao: int,
+    unlocked_rao: int,
+    amount_to_transfer: Balance,
+    origin_netuid: int,
+    dest_coldkey_ss58: str,
+    prompt: bool,
+    decline: bool,
+    quiet: bool,
+) -> bool:
+    """Same-subnet transfer that crosses an active lock.
+
+    The locked portion follows the transfer to the destination coldkey,
+    carrying conviction proportionally. Refuses on LockHotkeyMismatch (the
+    destination already holds a lock to a different hotkey on this subnet);
+    otherwise explains the split and confirms. Returns True to proceed,
+    False to abort.
+    """
+    requested_rao = int(amount_to_transfer.rao)
+    overflow_rao = max(0, requested_rao - unlocked_rao)
+    locked_transfer_rao = min(overflow_rao, locked_rao)
+
+    if locked_transfer_rao <= 0:
+        return True
+
+    origin_lock_hotkey = origin_lock.hotkey if origin_lock is not None else None
+    dest_lock_hotkey = dest_lock.hotkey if dest_lock is not None else None
+
+    if dest_lock_hotkey is not None and dest_lock_hotkey != origin_lock_hotkey:
+        origin_hk_short = (
+            f"{origin_lock_hotkey[:6]}…{origin_lock_hotkey[-4:]}"
+            if origin_lock_hotkey
+            else "—"
+        )
+        dest_hk_short = f"{dest_lock_hotkey[:6]}…{dest_lock_hotkey[-4:]}"
+        locked_transfer_balance = Balance.from_rao(locked_transfer_rao).set_unit(
+            origin_netuid
+        )
+        print_error(
+            f"Can't transfer {amount_to_transfer} to "
+            f"{dest_coldkey_ss58[:6]}…{dest_coldkey_ss58[-4:]}: "
+            f"{locked_transfer_balance} of your locked portion would need to "
+            f"follow the transfer, but the destination already has a lock to a "
+            f"different hotkey on netuid {origin_netuid} "
+            f"({dest_hk_short} vs {origin_hk_short}). LockHotkeyMismatch refusal.\n"
+            f"Aborted, nothing was submitted."
+        )
+        return False
+
+    unlocked_transfer_balance = Balance.from_rao(
+        requested_rao - locked_transfer_rao
+    ).set_unit(origin_netuid)
+    locked_transfer_balance = Balance.from_rao(locked_transfer_rao).set_unit(
+        origin_netuid
+    )
+    proportion_pct = locked_transfer_rao / locked_rao * 100.0 if locked_rao > 0 else 0.0
+    hk_short = (
+        f"{origin_lock_hotkey[:6]}…{origin_lock_hotkey[-4:]}"
+        if origin_lock_hotkey
+        else "—"
+    )
+    console.print(
+        f"\n[yellow]This transfer crosses your active lock on "
+        f"netuid {origin_netuid}:[/yellow]\n"
+        f"  [{COLORS.S.AMOUNT}]{unlocked_transfer_balance}[/{COLORS.S.AMOUNT}] "
+        f"unlocked → transferred normally\n"
+        f"  [{COLORS.S.AMOUNT}]{locked_transfer_balance}[/{COLORS.S.AMOUNT}] "
+        f"locked on hotkey {hk_short} → will MOVE to the destination coldkey, "
+        f"carrying ~{proportion_pct:.0f}% of your conviction proportionally.\n"
+    )
+    if prompt and not confirm_action(
+        "Proceed?", default=False, decline=decline, quiet=quiet
+    ):
+        console.print("[dim]Aborted.[/dim]")
+        return False
+
+    return True
+
+
 async def transfer_stake(
     wallet: Wallet,
     subtensor: "SubtensorInterface",
@@ -868,18 +986,29 @@ async def transfer_stake(
         ):
             return False, ""
 
-    # Get current stake balances
     with console.status(f"Retrieving stake data from {subtensor.network}..."):
-        current_stake = await subtensor.get_stake(
-            coldkey_ss58=coldkey_ss58,
-            hotkey_ss58=origin_hotkey,
-            netuid=origin_netuid,
+        (
+            coldkey_stakes,
+            current_dest_stake,
+            origin_locks,
+            dest_locks,
+            lock_rates,
+            current_block_,
+        ) = await asyncio.gather(
+            subtensor.get_stake_for_coldkey(coldkey_ss58),
+            subtensor.get_stake(
+                coldkey_ss58=dest_coldkey_ss58,
+                hotkey_ss58=origin_hotkey,
+                netuid=dest_netuid,
+            ),
+            subtensor.get_coldkey_locks(coldkey_ss58=coldkey_ss58),
+            subtensor.get_coldkey_locks(coldkey_ss58=dest_coldkey_ss58),
+            subtensor.get_lock_rates(),
+            subtensor.substrate.get_block_number(),
         )
-        current_dest_stake = await subtensor.get_stake(
-            coldkey_ss58=dest_coldkey_ss58,
-            hotkey_ss58=origin_hotkey,
-            netuid=dest_netuid,
-        )
+    coldkey_stakes = coldkey_stakes or []
+    current_stake = _stake_on(coldkey_stakes, origin_hotkey, origin_netuid)
+    origin_subnet_total_rao = _subnet_total_rao(coldkey_stakes, origin_netuid)
 
     if current_stake.tao == 0:
         print_error(
@@ -887,23 +1016,75 @@ async def transfer_stake(
         )
         return False, ""
 
+    # Cross-subnet: locked alpha cannot leave the subnet
+    is_cross_subnet = origin_netuid != dest_netuid
+    origin_lock = origin_locks.get(origin_netuid)
+    dest_lock = dest_locks.get(dest_netuid)
+
+    if origin_lock is not None:
+        unlock_rate, maturity_rate = lock_rates
+        rolled_origin = roll_forward_lock(
+            lock=origin_lock.lock,
+            now=int(current_block_),
+            unlock_rate=unlock_rate,
+            maturity_rate=maturity_rate,
+            owner_lock=False,
+            perpetual_lock=origin_lock.is_perpetual,
+        )
+        locked_rao = rolled_origin.locked_mass
+    else:
+        locked_rao = 0
+
+    unlocked_rao = min(
+        int(current_stake.rao), max(0, origin_subnet_total_rao - locked_rao)
+    )
+    if is_cross_subnet:
+        effective_max_balance = Balance.from_rao(unlocked_rao).set_unit(origin_netuid)
+    else:
+        effective_max_balance = current_stake
+
     if amount:
         amount_to_transfer = Balance.from_tao(amount).set_unit(origin_netuid)
     elif stake_all:
-        amount_to_transfer = current_stake
+        amount_to_transfer = effective_max_balance
     else:
         amount_to_transfer, _ = prompt_stake_amount(
-            current_stake, origin_netuid, "transfer"
+            effective_max_balance, origin_netuid, "transfer"
         )
 
     # Check if enough stake to transfer
-    if amount_to_transfer > current_stake:
-        print_error(
-            f"Not enough stake to transfer:\n"
-            f"Stake balance: [{COLOR_PALETTE.S.STAKE_AMOUNT}]{current_stake}[/{COLOR_PALETTE.S.STAKE_AMOUNT}] < "
-            f"Transfer amount: [{COLOR_PALETTE.S.STAKE_AMOUNT}]{amount_to_transfer}[/{COLOR_PALETTE.S.STAKE_AMOUNT}]"
-        )
+    if amount_to_transfer > effective_max_balance:
+        if is_cross_subnet and locked_rao > 0:
+            locked_balance = Balance.from_rao(locked_rao).set_unit(origin_netuid)
+            print_error(
+                f"Can't transfer {amount_to_transfer} from netuid "
+                f"{origin_netuid}: only {effective_max_balance} can leave the "
+                f"subnet — a subnet-wide lock of {locked_balance} applies "
+                f"across your stake on this subnet."
+            )
+        else:
+            print_error(
+                f"Not enough stake to transfer:\n"
+                f"Stake balance: [{COLORS.S.AMOUNT}]{current_stake}[/{COLORS.S.AMOUNT}] < "
+                f"Transfer amount: [{COLORS.S.AMOUNT}]{amount_to_transfer}[/{COLORS.S.AMOUNT}]"
+            )
         return False, ""
+
+    # Same-subnet transfer crossing an active lock: the locked portion follows
+    if not is_cross_subnet and locked_rao > 0:
+        if not _confirm_lock_follow_or_refuse(
+            origin_lock=origin_lock,
+            dest_lock=dest_lock,
+            locked_rao=locked_rao,
+            unlocked_rao=unlocked_rao,
+            amount_to_transfer=amount_to_transfer,
+            origin_netuid=origin_netuid,
+            dest_coldkey_ss58=dest_coldkey_ss58,
+            prompt=prompt,
+            decline=decline,
+            quiet=quiet,
+        ):
+            return False, ""
 
     call = await subtensor.substrate.compose_call(
         call_module="SubtensorModule",
@@ -1089,31 +1270,45 @@ async def swap_stake(
         print_error(f"Subnet {origin_netuid} does not exist")
         return False, ""
 
-    # Get current stake balances
     with console.status(f"Retrieving stake data from {subtensor.network}..."):
-        current_stake = await subtensor.get_stake(
-            coldkey_ss58=coldkey_ss58,
-            hotkey_ss58=hotkey_ss58,
-            netuid=origin_netuid,
+        coldkey_stakes, origin_lock = await asyncio.gather(
+            subtensor.get_stake_for_coldkey(coldkey_ss58),
+            subtensor.get_coldkey_lock(coldkey_ss58, origin_netuid),
         )
-        current_dest_stake = await subtensor.get_stake(
-            coldkey_ss58=coldkey_ss58,
-            hotkey_ss58=hotkey_ss58,
-            netuid=destination_netuid,
-        )
+    coldkey_stakes = coldkey_stakes or []
+    current_stake = _stake_on(coldkey_stakes, hotkey_ss58, origin_netuid)
+    current_dest_stake = _stake_on(coldkey_stakes, hotkey_ss58, destination_netuid)
+    origin_subnet_total_rao = _subnet_total_rao(coldkey_stakes, origin_netuid)
+
+    locked_rao = origin_lock.locked_mass if origin_lock is not None else 0
+    if locked_rao > 0:
+        subnet_available = max(0, origin_subnet_total_rao - locked_rao)
+        available_balance = Balance.from_rao(
+            min(int(current_stake.rao), subnet_available)
+        ).set_unit(origin_netuid)
+    else:
+        available_balance = current_stake
 
     if swap_all:
-        amount_to_swap = current_stake.set_unit(origin_netuid)
+        amount_to_swap = available_balance
     else:
         amount_to_swap = Balance.from_tao(amount).set_unit(origin_netuid)
 
     # Check if enough stake to swap
-    if amount_to_swap > current_stake:
-        print_error(
-            f"Not enough stake to swap:\n"
-            f"Stake balance: [{COLOR_PALETTE.S.STAKE_AMOUNT}]{current_stake}[/{COLOR_PALETTE.S.STAKE_AMOUNT}] < "
-            f"Swap amount: [{COLOR_PALETTE.S.STAKE_AMOUNT}]{amount_to_swap}[/{COLOR_PALETTE.S.STAKE_AMOUNT}]"
-        )
+    if amount_to_swap > available_balance:
+        if locked_rao > 0:
+            locked_balance = Balance.from_rao(locked_rao).set_unit(origin_netuid)
+            print_error(
+                f"Can't swap {amount_to_swap} from netuid {origin_netuid}: "
+                f"only {available_balance} available — a subnet-wide lock of "
+                f"{locked_balance} applies across your stake on this subnet."
+            )
+        else:
+            print_error(
+                f"Not enough stake to swap:\n"
+                f"Stake balance: [{COLORS.S.AMOUNT}]{current_stake}[/{COLORS.S.AMOUNT}] < "
+                f"Swap amount: [{COLORS.S.AMOUNT}]{amount_to_swap}[/{COLORS.S.AMOUNT}]"
+            )
         return False, ""
 
     pricing = await get_movement_pricing(
