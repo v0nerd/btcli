@@ -920,7 +920,6 @@ HELP_PANELS = {
         "CHILD": "Child Hotkeys",
         "MOVEMENT": "Stake Movement",
         "CLAIM": "Root Claim Management",
-        "LOCK": "Conviction Locking",
     },
     "SUDO": {
         "CONFIG": "Subnet Configuration",
