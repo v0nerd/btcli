@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from typing import Optional, Any, Union
 
@@ -111,6 +112,48 @@ class InfoBase:
 
     def get(self, item, default=None):
         return getattr(self, item, default)
+
+
+@dataclass(frozen=True)
+class LockState:
+    locked_mass: int
+    conviction: Decimal
+    last_update: int
+
+    @classmethod
+    def zero(cls, now: int) -> "LockState":
+        return cls(locked_mass=0, conviction=Decimal(0), last_update=now)
+
+    @classmethod
+    def from_any(cls, decoded: Any) -> "LockState":
+        return cls(
+            locked_mass=int(decoded["locked_mass"]),
+            conviction=Decimal(str(fixed_to_float(decoded["conviction"]))),
+            last_update=int(decoded["last_update"]),
+        )
+
+    def locked_balance(self, netuid: int) -> Balance:
+        return Balance.from_rao(self.locked_mass).set_unit(netuid)
+
+
+@dataclass(frozen=True)
+class ColdkeySubnetLock:
+    """One coldkey's lock on one subnet."""
+
+    netuid: int
+    hotkey: str
+    lock: LockState
+    is_perpetual: bool = False
+
+
+@dataclass(frozen=True)
+class SubnetLockAggregates:
+    """Lock-specific aggregate maps for a subnet."""
+
+    hotkey_perpetual: dict[str, LockState]
+    hotkey_decaying: dict[str, LockState]
+    owner_perp_lock: Optional[LockState]
+    owner_decay_lock: Optional[LockState]
 
 
 @dataclass
