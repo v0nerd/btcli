@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
@@ -25,6 +24,7 @@ from bittensor_cli.src.bittensor.utils import (
     console,
     create_table,
     is_valid_ss58_address,
+    json_console,
     print_error,
     unlock_key,
 )
@@ -749,24 +749,21 @@ def _print_lock_add_graph(preview: _LockAddPreview) -> None:
 
 
 def _print_lock_add_json(preview: _LockAddPreview) -> None:
-    console.print(
-        json.dumps(
-            {
-                "netuid": preview.netuid,
-                "hotkey": preview.hotkey,
-                "mode": "perpetual" if preview.is_perpetual else "decaying",
-                "targets_owner_hotkey": preview.targets_owner_hotkey,
-                "current_locked_rao": preview.current_locked_rao,
-                "adding_rao": preview.adding_rao,
-                "new_locked_rao": preview.new_locked_rao,
-                "available_after_rao": preview.available_after_rao,
-                "projected_freed_rao": preview.projected_freed_rao,
-                "projected_locked_rao": preview.projected_locked_rao,
-                "projected_conviction_rao": {
-                    day: str(value)
-                    for day, value in preview.projected_conviction.items()
-                },
-                "mode_change_needed": preview.mode_change_needed,
-            }
-        )
+    json_console.print_json(
+        data={
+            "netuid": preview.netuid,
+            "hotkey": preview.hotkey,
+            "mode": "perpetual" if preview.is_perpetual else "decaying",
+            "targets_owner_hotkey": preview.targets_owner_hotkey,
+            "current_locked_rao": preview.current_locked_rao,
+            "adding_rao": preview.adding_rao,
+            "new_locked_rao": preview.new_locked_rao,
+            "available_after_rao": preview.available_after_rao,
+            "projected_freed_rao": preview.projected_freed_rao,
+            "projected_locked_rao": preview.projected_locked_rao,
+            "projected_conviction_rao": {
+                day: str(value) for day, value in preview.projected_conviction.items()
+            },
+            "mode_change_needed": preview.mode_change_needed,
+        }
     )

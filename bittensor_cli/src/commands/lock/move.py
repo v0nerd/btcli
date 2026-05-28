@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
@@ -16,6 +15,7 @@ from bittensor_cli.src.bittensor.utils import (
     console,
     create_table,
     is_valid_ss58_address,
+    json_console,
     print_error,
     unlock_key,
 )
@@ -307,25 +307,21 @@ def _print_lock_move_preview(preview: _LockMovePreview) -> None:
 
 
 def _print_lock_move_json(preview: _LockMovePreview) -> None:
-    console.print(
-        json.dumps(
-            {
-                "network": preview.network,
-                "coldkey": preview.coldkey,
-                "netuid": preview.netuid,
-                "mode": mode_name(preview.is_perpetual),
-                "origin_targets_owner_hotkey": preview.origin_targets_owner_hotkey,
-                "destination_targets_owner_hotkey": (
-                    preview.destination_targets_owner_hotkey
-                ),
-                "locked_rao": preview.locked_rao,
-                "conviction_rao": str(preview.conviction),
-                "conviction_after_rao": str(preview.conviction_after),
-                "origin_hotkey": preview.origin_hotkey,
-                "destination_hotkey": preview.destination_hotkey,
-                "origin_owner": preview.origin_owner,
-                "destination_owner": preview.destination_owner,
-                "conviction_resets": preview.conviction_resets,
-            }
-        )
+    json_console.print_json(
+        data={
+            "network": preview.network,
+            "coldkey": preview.coldkey,
+            "netuid": preview.netuid,
+            "mode": mode_name(preview.is_perpetual),
+            "origin_targets_owner_hotkey": preview.origin_targets_owner_hotkey,
+            "destination_targets_owner_hotkey": preview.destination_targets_owner_hotkey,
+            "locked_rao": preview.locked_rao,
+            "conviction_rao": str(preview.conviction),
+            "conviction_after_rao": str(preview.conviction_after),
+            "origin_hotkey": preview.origin_hotkey,
+            "destination_hotkey": preview.destination_hotkey,
+            "origin_owner": preview.origin_owner,
+            "destination_owner": preview.destination_owner,
+            "conviction_resets": preview.conviction_resets,
+        }
     )

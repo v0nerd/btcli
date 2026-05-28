@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
@@ -16,7 +15,12 @@ from bittensor_cli.src.bittensor.locks import (
     available_to_unstake,
     roll_forward_lock,
 )
-from bittensor_cli.src.bittensor.utils import console, create_table, millify_tao
+from bittensor_cli.src.bittensor.utils import (
+    console,
+    create_table,
+    millify_tao,
+    json_console,
+)
 
 if TYPE_CHECKING:
     from bittensor_cli.src.bittensor.subtensor_interface import SubtensorInterface
@@ -359,4 +363,4 @@ def _print_json(
             }
         )
 
-    print(json.dumps(out, indent=2))
+    json_console.print_json(data=out)

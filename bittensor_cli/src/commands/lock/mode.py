@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Optional, TYPE_CHECKING
 
 from bittensor_wallet import Wallet
@@ -13,6 +12,7 @@ from bittensor_cli.src.bittensor.utils import (
     confirm_action,
     console,
     create_table,
+    json_console,
     print_error,
     unlock_key,
 )
@@ -234,19 +234,17 @@ def _print_lock_mode_json(
     active_lock: Optional[ColdkeySubnetLock],
     rolled_lock: Optional[LockState],
 ) -> None:
-    console.print(
-        json.dumps(
-            {
-                "netuid": netuid,
-                "current_mode": mode_name(current_is_perpetual),
-                "target_mode": (
-                    mode_name(target_is_perpetual)
-                    if target_is_perpetual is not None
-                    else None
-                ),
-                "active_lock": active_lock is not None,
-                "locked_rao": rolled_lock.locked_mass if rolled_lock else 0,
-                "hotkey": active_lock.hotkey if active_lock else None,
-            }
-        )
+    json_console.print_json(
+        data={
+            "netuid": netuid,
+            "current_mode": mode_name(current_is_perpetual),
+            "target_mode": (
+                mode_name(target_is_perpetual)
+                if target_is_perpetual is not None
+                else None
+            ),
+            "active_lock": active_lock is not None,
+            "locked_rao": rolled_lock.locked_mass if rolled_lock else 0,
+            "hotkey": active_lock.hotkey if active_lock else None,
+        }
     )
