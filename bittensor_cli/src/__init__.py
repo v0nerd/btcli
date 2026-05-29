@@ -872,6 +872,18 @@ HYPERPARAMS_METADATA = {
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#ownercutautolockenabled",
     },
+    "burn_half_life": {
+        "description": "Half-life (in blocks) controlling how quickly the registration burn price decays back toward min_burn.",
+        "side_effects": "Larger values make the registration burn price decay more slowly after registrations; smaller values let it fall back to min_burn faster.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#burnhalflife",
+    },
+    "burn_increase_mult": {
+        "description": "Multiplier applied to the registration burn price after each successful registration.",
+        "side_effects": "Higher values make the burn price jump more sharply with each registration, raising the cost of rapid successive registrations.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#burnincreasemult",
+    },
 }
 
 # Help Panels for cli help
