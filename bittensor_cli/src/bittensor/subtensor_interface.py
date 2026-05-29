@@ -83,7 +83,7 @@ class SubtensorInterface:
             self.chain_endpoint = Constants.network_map[network]
             self.network = network
             if network == "local":
-                console.log(
+                console.print(
                     "[yellow]Warning[/yellow]: Verify your local subtensor is running on port 9944."
                 )
         else:
