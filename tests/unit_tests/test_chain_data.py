@@ -12,6 +12,7 @@ from bittensor_cli.src.bittensor.chain_data import (
     DynamicInfo,
     StakeInfo,
     NeuronInfo,
+    SubnetHyperparameters,
 )
 from bittensor_cli.src.bittensor.balances import Balance
 
@@ -444,3 +445,170 @@ class TestNeuronInfoFixDecoded:
         assert isinstance(info.stake_dict, dict)
         # One entry from _ACCOUNT_ID → 5 TAO
         assert len(info.stake_dict) == 1
+
+
+# ---------------------------------------------------------------------------
+# SubnetHyperparameters (V3 dynamic decoder)
+# ---------------------------------------------------------------------------
+
+# A trimmed but representative slice of the v3 ``get_subnet_hyperparams_v3``
+# runtime API response: a list of {"name", "value": {<type_tag>: payload}} records.
+_HYPERPARAMS_V3 = [
+    {"name": "kappa", "value": {"U16": 32767}},
+    {"name": "tempo", "value": {"U16": 100}},
+    {"name": "weights_rate_limit", "value": {"U64": 100}},
+    {"name": "registration_allowed", "value": {"Bool": True}},
+    {"name": "liquid_alpha_enabled", "value": {"Bool": False}},
+    {"name": "min_burn", "value": {"TaoBalance": 500000}},
+    {"name": "max_burn", "value": {"TaoBalance": 100000000000}},
+    {"name": "burn_increase_mult", "value": {"U64F64": {"bits": 23242897532874035200}}},
+    {"name": "alpha_sigmoid_steepness", "value": {"I32F32": {"bits": 4294967296000}}},
+]
+
+
+class TestSubnetHyperparametersDecode:
+    """The V3 dynamic decoder (``_decode_value`` / ``_fix_decoded``)."""
+
+    @pytest.mark.parametrize(
+        "tag",
+        ["U8", "U16", "U32", "U64", "U128", "I8", "I16", "I32", "I64"],
+    )
+    def test_integer_tags_decode_to_int(self, tag):
+        """All sized integer tags decode to a plain int."""
+        result = SubnetHyperparameters._decode_value({tag: 42})
+        assert result == 42
+        assert type(result) is int
+
+    def test_bool_tag_decodes_to_bool(self):
+        assert SubnetHyperparameters._decode_value({"Bool": True}) is True
+        assert SubnetHyperparameters._decode_value({"Bool": False}) is False
+
+    def test_tao_balance_kept_as_raw_rao_int(self):
+        """Balances stay raw rao ints for downstream normalization."""
+        result = SubnetHyperparameters._decode_value({"TaoBalance": 500000})
+        assert result == 500000
+        assert type(result) is int
+
+    @pytest.mark.parametrize(
+        "tag, bits, frac_bits, expected",
+        [
+            ("U64F64", 2**64, 64, 1.0),
+            ("U64F64", 23242897532874035200, 64, 1.26),
+            ("I32F32", 2**32, 32, 1.0),
+            ("I32F32", 4294967296000, 32, 1000.0),
+            ("U16F16", 2**16, 16, 1.0),
+        ],
+    )
+    def test_fixed_point_tags_decode_with_frac_bits_from_tag(
+        self, tag, bits, frac_bits, expected
+    ):
+        """Fixed-point tags parse their fractional bit-width out of the tag name."""
+        result = SubnetHyperparameters._decode_value({tag: {"bits": bits}})
+        assert result == pytest.approx(expected)
+        assert isinstance(result, float)
+
+    def test_unknown_shape_passes_through_unchanged(self):
+        """A non-tagged / already-flat value is returned as-is."""
+        assert SubnetHyperparameters._decode_value(7) == 7
+        assert SubnetHyperparameters._decode_value(True) is True
+        # Multi-key dict is not a single {tag: payload} wrapper -> passthrough.
+        multi = {"a": 1, "b": 2}
+        assert SubnetHyperparameters._decode_value(multi) == multi
+
+    def test_non_numeric_payload_falls_back_to_passthrough(self):
+        """If int() can't parse the payload, the raw value is preserved."""
+        assert SubnetHyperparameters._decode_value({"Text": "hello"}) == "hello"
+
+    def test_from_any_decodes_v3_list(self):
+        params = SubnetHyperparameters.from_any(_HYPERPARAMS_V3)
+        assert params.kappa == 32767
+        assert params.tempo == 100
+        assert params.weights_rate_limit == 100
+        assert params.registration_allowed is True
+        assert params.liquid_alpha_enabled is False
+        assert params.min_burn == 500000
+        assert params.max_burn == 100000000000
+        assert params.burn_increase_mult == pytest.approx(1.26)
+        assert params.alpha_sigmoid_steepness == pytest.approx(1000.0)
+
+
+class TestSubnetHyperparametersExtensibility:
+    """Added/removed chain fields flow through without code changes."""
+
+    def test_new_unknown_field_is_decoded_and_accessible(self):
+        payload = _HYPERPARAMS_V3 + [{"name": "future_param", "value": {"U128": 7}}]
+        params = SubnetHyperparameters.from_any(payload)
+        assert params.future_param == 7
+        assert "future_param" in params
+
+    def test_removed_field_simply_absent(self):
+        payload = [r for r in _HYPERPARAMS_V3 if r["name"] != "kappa"]
+        params = SubnetHyperparameters.from_any(payload)
+        assert "kappa" not in params
+        assert params.get("kappa") is None
+
+    def test_empty_response_yields_empty_mapping(self):
+        params = SubnetHyperparameters.from_any([])
+        assert list(params.keys()) == []
+        assert params.get("anything", "default") == "default"
+
+
+class TestSubnetHyperparametersAccess:
+    """Attribute, item, membership and iteration access patterns."""
+
+    def _params(self):
+        return SubnetHyperparameters.from_any(_HYPERPARAMS_V3)
+
+    def test_attribute_access(self):
+        assert self._params().tempo == 100
+
+    def test_item_access(self):
+        assert self._params()["tempo"] == 100
+
+    def test_missing_attribute_raises_attribute_error(self):
+        with pytest.raises(AttributeError):
+            _ = self._params().does_not_exist
+
+    def test_missing_item_raises_key_error(self):
+        with pytest.raises(KeyError):
+            _ = self._params()["does_not_exist"]
+
+    def test_get_with_and_without_default(self):
+        params = self._params()
+        assert params.get("tempo") == 100
+        assert params.get("missing") is None
+        assert params.get("missing", 5) == 5
+
+    def test_contains(self):
+        params = self._params()
+        assert "tempo" in params
+        assert "missing" not in params
+
+    def test_iteration_yields_names(self):
+        names = set(iter(self._params()))
+        assert "tempo" in names and "kappa" in names
+
+    def test_items_keys_values(self):
+        params = self._params()
+        assert ("tempo", 100) in params.items()
+        assert "tempo" in params.keys()
+        assert 100 in params.values()
+
+
+class TestSubnetHyperparametersInputForms:
+    """``_fix_decoded`` tolerates non-list inputs for robustness/tests."""
+
+    def test_flat_dict_input(self):
+        """A pre-flattened {name: value} dict decodes without wrappers."""
+        params = SubnetHyperparameters.from_any({"tempo": 100, "kappa": 32767})
+        assert params.tempo == 100
+        assert params.kappa == 32767
+
+    def test_wrapped_dict_input(self):
+        """A {name: {tag: payload}} dict is decoded per value."""
+        params = SubnetHyperparameters.from_any({"tempo": {"U16": 100}})
+        assert params.tempo == 100
+
+    def test_passthrough_existing_instance(self):
+        original = SubnetHyperparameters.from_any(_HYPERPARAMS_V3)
+        assert SubnetHyperparameters.from_any(original) is original
