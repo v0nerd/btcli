@@ -1,11 +1,12 @@
+import re
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from typing import Optional, Any, Union
 
 import netaddr
-from scalecodec.utils.math import FixedPoint, fixed_to_decimal
+from scalecodec.utils.math import fixed_to_decimal
 from scalecodec.utils.ss58 import ss58_encode
 
 from bittensor_cli.src.bittensor.balances import Balance, fixed_to_float
@@ -156,128 +157,102 @@ class SubnetLockAggregates:
     owner_decay_lock: Optional[LockState]
 
 
+# Fixed-point type tags (e.g. ``U64F64``, ``I32F32``) encode their integer and
+# fractional bit-widths in the name; the second group gives the fractional bits.
+_FIXED_POINT_TAG = re.compile(r"^[UI]\d+F(\d+)$")
+
+
 @dataclass
 class SubnetHyperparameters(InfoBase):
     """
-    This class represents the hyperparameters for a subnet.
-    Attributes:
-        rho (int): The rate of decay of some value.
-        kappa (int): A constant multiplier used in calculations.
-        immunity_period (int): The period during which immunity is active.
-        min_allowed_weights (int): Minimum allowed weights.
-        max_weight_limit (float): Maximum weight limit.
-        tempo (int): The tempo or rate of operation.
-        min_difficulty (int): Minimum difficulty for some operations.
-        max_difficulty (int): Maximum difficulty for some operations.
-        weights_version (int): The version number of the weights used.
-        weights_rate_limit (int): Rate limit for processing weights.
-        adjustment_interval (int): Interval at which adjustments are made.
-        activity_cutoff (int): Activity cutoff threshold.
-        registration_allowed (bool): Indicates if registration is allowed.
-        target_regs_per_interval (int): Target number of registrations per interval.
-        min_burn (int): Minimum burn value.
-        max_burn (int): Maximum burn value.
-        bonds_moving_avg (int): Moving average of bonds.
-        max_regs_per_block (int): Maximum number of registrations per block.
-        serving_rate_limit (int): Limit on the rate of service.
-        max_validators (int): Maximum number of validators.
-        adjustment_alpha (int): Alpha value for adjustments.
-        difficulty (int): Difficulty level.
-        commit_reveal_period (int): Interval for commit-reveal weights.
-        commit_reveal_weights_enabled (bool): Flag indicating if commit-reveal weights are enabled.
-        alpha_high (int): High value of alpha.
-        alpha_low (int): Low value of alpha.
-        liquid_alpha_enabled (bool): Flag indicating if liquid alpha is enabled.
-        alpha_sigmoid_steepness (float):
-        yuma_version (int): Version of yuma.
-        subnet_is_active (bool): Indicates if subnet is active after START CALL.
-        transfers_enabled (bool): Flag indicating if transfers are enabled.
-        bonds_reset_enabled (bool): Flag indicating if bonds are reset enabled.
-        user_liquidity_enabled (bool): Flag indicating if user liquidity is enabled.
+    Dynamic container for a subnet's hyperparameters.
+
+    The chain returns hyperparameters from the `get_subnet_hyperparams_v3`
+    runtime API as a list of `{"name": str, "value": {<type_tag>: <payload>}}`
+    records. Rather than a fixed struct, this class decodes whatever records the
+    runtime returns into a plain ``name -> value`` mapping, so hyperparameters can
+    be added to or removed from the chain without requiring code changes here.
+
+    Values are decoded to native Python types (`int` for integers and balances in
+    rao, `bool` for booleans, `float` for fixed-point numbers). Human-readable
+    normalization for display happens separately in
+    :func:`bittensor_cli.src.bittensor.utils.normalize_hyperparameters`.
+
+    Decoded values are exposed via attribute access (``params.tempo``), item access
+    (`params["tempo"]`), membership tests (`"tempo" in params`), and iteration
+    (`params.items()`, `params.keys()`, `params.values()`).
     """
 
-    rho: int
-    kappa: int
-    immunity_period: int
-    min_allowed_weights: int
-    max_weight_limit: float
-    tempo: int
-    min_difficulty: int
-    max_difficulty: int
-    weights_version: int
-    weights_rate_limit: int
-    adjustment_interval: int
-    activity_cutoff: int
-    registration_allowed: bool
-    target_regs_per_interval: int
-    min_burn: int
-    max_burn: int
-    bonds_moving_avg: int
-    max_regs_per_block: int
-    serving_rate_limit: int
-    max_validators: int
-    adjustment_alpha: int
-    difficulty: int
-    commit_reveal_period: int
-    commit_reveal_weights_enabled: bool
-    alpha_high: int
-    alpha_low: int
-    liquid_alpha_enabled: bool
-    alpha_sigmoid_steepness: float
-    yuma_version: int
-    subnet_is_active: bool
-    transfers_enabled: bool
-    bonds_reset_enabled: bool
-    user_liquidity_enabled: bool
-    burn_increase_mult: FixedPoint
-    burn_half_life: int
+    hyperparameters: dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def _decode_value(value: Any) -> Any:
+        """Decode a single ``{<type_tag>: <payload>}`` hyperparameter value.
+
+        Unrecognized or already-flat values are returned unchanged so callers can
+        pass in pre-decoded data (e.g. in tests).
+        """
+        if not isinstance(value, dict) or len(value) != 1:
+            return value
+        ((type_tag, payload),) = value.items()
+        if type_tag == "Bool":
+            return bool(payload)
+        if match := _FIXED_POINT_TAG.match(type_tag):
+            return fixed_to_float(payload, frac_bits=int(match.group(1)))
+        # Everything else (U8/U16/U32/U64/U128, signed ints, TaoBalance, ...) is an
+        # integer; balances are left as raw rao for downstream normalization.
+        try:
+            return int(payload)
+        except (TypeError, ValueError):
+            return payload
 
     @classmethod
     def _fix_decoded(
         cls,
-        decoded: Union[dict, "SubnetHyperparameters"],
+        decoded: "list | dict | SubnetHyperparameters",
     ) -> "SubnetHyperparameters":
-        burn_increase_mult: FixedPoint = decoded["burn_increase_mult"]
-        burn_half_life: int = decoded["burn_half_life"]
+        if isinstance(decoded, SubnetHyperparameters):
+            return decoded
+        if isinstance(decoded, dict):
+            # Already keyed by name (either {name: {tag: payload}} or flat).
+            entries = decoded.items()
+        else:
+            # V3 format: list of {"name": ..., "value": ...} records.
+            entries = ((record["name"], record["value"]) for record in decoded)
         return cls(
-            activity_cutoff=decoded["activity_cutoff"],
-            adjustment_alpha=decoded["adjustment_alpha"],
-            adjustment_interval=decoded["adjustment_interval"],
-            alpha_high=decoded["alpha_high"],
-            alpha_low=decoded["alpha_low"],
-            alpha_sigmoid_steepness=fixed_to_float(
-                decoded["alpha_sigmoid_steepness"], frac_bits=32
-            ),
-            bonds_moving_avg=decoded["bonds_moving_avg"],
-            bonds_reset_enabled=decoded["bonds_reset_enabled"],
-            commit_reveal_weights_enabled=decoded["commit_reveal_weights_enabled"],
-            commit_reveal_period=decoded["commit_reveal_period"],
-            difficulty=decoded["difficulty"],
-            immunity_period=decoded["immunity_period"],
-            kappa=decoded["kappa"],
-            liquid_alpha_enabled=decoded["liquid_alpha_enabled"],
-            max_burn=decoded["max_burn"],
-            max_difficulty=decoded["max_difficulty"],
-            max_regs_per_block=decoded["max_regs_per_block"],
-            max_validators=decoded["max_validators"],
-            max_weight_limit=decoded["max_weights_limit"],
-            min_allowed_weights=decoded["min_allowed_weights"],
-            min_burn=decoded["min_burn"],
-            min_difficulty=decoded["min_difficulty"],
-            registration_allowed=decoded["registration_allowed"],
-            rho=decoded["rho"],
-            serving_rate_limit=decoded["serving_rate_limit"],
-            subnet_is_active=decoded["subnet_is_active"],
-            target_regs_per_interval=decoded["target_regs_per_interval"],
-            tempo=decoded["tempo"],
-            transfers_enabled=decoded["transfers_enabled"],
-            user_liquidity_enabled=decoded["user_liquidity_enabled"],
-            weights_rate_limit=decoded["weights_rate_limit"],
-            weights_version=decoded["weights_version"],
-            yuma_version=decoded["yuma_version"],
-            burn_increase_mult=burn_increase_mult,
-            burn_half_life=burn_half_life,
+            hyperparameters={name: cls._decode_value(value) for name, value in entries}
         )
+
+    def __getattr__(self, item: str) -> Any:
+        # Only invoked when normal attribute lookup fails, so ``hyperparameters``
+        # itself is always resolved normally and this cannot recurse.
+        try:
+            return self.__dict__["hyperparameters"][item]
+        except KeyError:
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no hyperparameter {item!r}"
+            )
+
+    def __getitem__(self, item: str) -> Any:
+        return self.hyperparameters[item]
+
+    def __contains__(self, item: str) -> bool:
+        return item in self.hyperparameters
+
+    def __iter__(self):
+        return iter(self.hyperparameters)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        return self.hyperparameters.get(item, default)
+
+    def items(self):
+        return self.hyperparameters.items()
+
+    def keys(self):
+        return self.hyperparameters.keys()
+
+    def values(self):
+        return self.hyperparameters.values()
 
 
 @dataclass

@@ -31,7 +31,6 @@ import typer
 
 from bittensor_cli.src.bittensor.balances import Balance
 from bittensor_cli.src import defaults, Constants
-from scalecodec.utils.math import fixed_to_float
 
 if TYPE_CHECKING:
     from bittensor_cli.src.bittensor.chain_data import SubnetHyperparameters
@@ -848,21 +847,19 @@ def normalize_hyperparameters(
         "max_difficulty": u64_normalized_float,
         "difficulty": u64_normalized_float,
         "bonds_moving_avg": u64_normalized_float,
-        "max_weight_limit": u16_normalized_float,
+        "max_weights_limit": u16_normalized_float,
         "kappa": u16_normalized_float,
         "alpha_high": u16_normalized_float,
         "alpha_low": u16_normalized_float,
         "alpha_sigmoid_steepness": u16_normalized_float,
         "min_burn": Balance.from_rao,
         "max_burn": Balance.from_rao,
-        "burn_increase_mult": fixed_to_float,
         "burn_half_life": u16_normalized_float,
     }
 
     normalized_values: list[tuple[str, str, str]] = []
-    subnet_dict = subnet.__dict__
 
-    for param, value in subnet_dict.items():
+    for param, value in subnet.items():
         try:
             if param in param_mappings:
                 norm_value = param_mappings[param](value)
