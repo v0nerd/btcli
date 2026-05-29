@@ -157,7 +157,7 @@ class SubnetLockAggregates:
     owner_decay_lock: Optional[LockState]
 
 
-# Fixed-point type tags (e.g. ``U64F64``, ``I32F32``) encode their integer and
+# Fixed-point type tags (e.g. `U64F64`, `I32F32`) encode their integer and
 # fractional bit-widths in the name; the second group gives the fractional bits.
 _FIXED_POINT_TAG = re.compile(r"^[UI]\d+F(\d+)$")
 
@@ -209,8 +209,8 @@ class SubnetHyperparameters(InfoBase):
     @classmethod
     def _fix_decoded(
         cls,
-        decoded: "list | dict | SubnetHyperparameters",
-    ) -> "SubnetHyperparameters":
+        decoded: list | dict | Self,
+    ) -> Self:
         if isinstance(decoded, SubnetHyperparameters):
             return decoded
         if isinstance(decoded, dict):
