@@ -626,10 +626,16 @@ HYPERPARAMS = {
     "sn_owner_hotkey": ("sudo_set_sn_owner_hotkey", RootSudoOnly.FALSE),
     "subnet_owner_hotkey": ("sudo_set_sn_owner_hotkey", RootSudoOnly.FALSE),
     "recycle_or_burn": ("sudo_set_recycle_or_burn", RootSudoOnly.FALSE),
+    "owner_cut_enabled": ("sudo_set_owner_cut_enabled", RootSudoOnly.FALSE),
+    "owner_cut_auto_lock_enabled": (
+        "sudo_set_owner_cut_auto_lock_enabled",
+        RootSudoOnly.FALSE,
+    ),
     # Note: These are displayed but not directly settable via HYPERPARAMS
     # They are derived or set via other mechanisms
     "alpha_high": ("", RootSudoOnly.FALSE),  # Derived from alpha_values
     "alpha_low": ("", RootSudoOnly.FALSE),  # Derived from alpha_values
+    #
     "subnet_is_active": ("", RootSudoOnly.FALSE),  # Set via btcli subnets start
     "yuma_version": ("", RootSudoOnly.FALSE),  # Related to yuma3_enabled
     "max_allowed_uids": ("sudo_set_max_allowed_uids", RootSudoOnly.FALSE),
@@ -853,6 +859,18 @@ HYPERPARAMS_METADATA = {
         "side_effects": "See description for min_allowed_uids",
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxalloweduids",
+    },
+    "owner_cut_enabled": {
+        "description": "Whether the subnet owner cut is taken from the subnet's emissions.",
+        "side_effects": "When disabled, no owner cut is deducted and the full emission goes to the subnet participants.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#ownercutenabled",
+    },
+    "owner_cut_auto_lock_enabled": {
+        "description": "Whether the subnet owner cut is automatically locked when collected.",
+        "side_effects": "When enabled, the owner cut is auto-locked rather than paid out as liquid stake.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#ownercutautolockenabled",
     },
 }
 
