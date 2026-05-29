@@ -1,7 +1,5 @@
 """Tests that --crypto-type is plumbed through to bittensor_wallet calls."""
 
-import json
-
 import pytest
 from unittest.mock import MagicMock, patch
 from bittensor_wallet import CRYPTO_ED25519, CRYPTO_SR25519, Keypair
