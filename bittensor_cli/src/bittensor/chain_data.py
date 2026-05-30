@@ -3,7 +3,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Any, Union
+from typing import Optional, Any
 
 import netaddr
 from scalecodec.utils.math import fixed_to_decimal
@@ -70,7 +70,7 @@ class AxonInfo:
         return self.ip != "0.0.0.0"
 
     @classmethod
-    def from_neuron_info(cls, neuron_info: dict) -> "AxonInfo":
+    def from_neuron_info(cls, neuron_info: dict) -> Self:
         """
         Converts a dictionary to an AxonInfo object.
 
@@ -122,11 +122,11 @@ class LockState:
     last_update: int
 
     @classmethod
-    def zero(cls, now: int) -> "LockState":
+    def zero(cls, now: int) -> Self:
         return cls(locked_mass=0, conviction=Decimal(0), last_update=now)
 
     @classmethod
-    def from_any(cls, decoded: Any) -> "LockState":
+    def from_any(cls, decoded: Any) -> Self:
         return cls(
             locked_mass=int(decoded["locked_mass"]),
             conviction=fixed_to_decimal(decoded["conviction"]),
@@ -270,7 +270,7 @@ class StakeInfo(InfoBase):
     is_registered: bool
 
     @classmethod
-    def _fix_decoded(cls, decoded: Any) -> "StakeInfo":
+    def _fix_decoded(cls, decoded: Any) -> Self:
         hotkey = decoded.get("hotkey")
         coldkey = decoded.get("coldkey")
         netuid = int(decoded.get("netuid"))
@@ -328,7 +328,7 @@ class NeuronInfo(InfoBase):
         neuron_lite: "NeuronInfoLite",
         weights_as_dict: dict[int, list[tuple[int, int]]],
         bonds_as_dict: dict[int, list[tuple[int, int]]],
-    ) -> "NeuronInfo":
+    ) -> Self:
         n_dict = neuron_lite.__dict__
         n_dict["weights"] = weights_as_dict.get(neuron_lite.uid, [])
         n_dict["bonds"] = bonds_as_dict.get(neuron_lite.uid, [])
@@ -364,7 +364,7 @@ class NeuronInfo(InfoBase):
         return neuron
 
     @classmethod
-    def _fix_decoded(cls, decoded: Any) -> "NeuronInfo":
+    def _fix_decoded(cls, decoded: Any) -> Self:
         netuid = decoded.get("netuid")
         stake_dict = process_stake_data(decoded.get("stake"), netuid=netuid)
         total_stake = sum(stake_dict.values()) if stake_dict else Balance(0)
@@ -429,7 +429,7 @@ class NeuronInfoLite(InfoBase):
     dividends: float
     last_update: int
     validator_permit: bool
-    axon_info: AxonInfo
+    axon_info: Optional[AxonInfo]
     pruning_score: int
     is_null: bool = False
 
@@ -460,7 +460,7 @@ class NeuronInfoLite(InfoBase):
         return neuron
 
     @classmethod
-    def _fix_decoded(cls, decoded: Union[dict, "NeuronInfoLite"]) -> "NeuronInfoLite":
+    def _fix_decoded(cls, decoded: dict | Self) -> Self:
         active = decoded.get("active")
         axon_info = decoded.get("axon_info", {})
         coldkey = decoded.get("coldkey")
@@ -547,7 +547,7 @@ class DelegateInfo(InfoBase):
     total_daily_return: Balance  # Total daily return of the delegate
 
     @classmethod
-    def _fix_decoded(cls, decoded: "DelegateInfo") -> "DelegateInfo":
+    def _fix_decoded(cls, decoded: Self) -> Self:
         hotkey = decoded.get("hotkey_ss58")
         owner = decoded.get("owner_ss58")
         nominators = [(x, Balance.from_rao(y)) for x, y in decoded.get("nominators")]
@@ -586,7 +586,7 @@ class DelegateInfoLite(InfoBase):
     owner_stake: Balance  # Own stake of the delegate
 
     @classmethod
-    def _fix_decoded(cls, decoded: Any) -> "DelegateInfoLite":
+    def _fix_decoded(cls, decoded: Any) -> Self:
         """Fixes the decoded values."""
         decoded_take = decoded.get("take")
 
@@ -629,7 +629,7 @@ class SubnetInfo(InfoBase):
     owner_ss58: str
 
     @classmethod
-    def _fix_decoded(cls, decoded: "SubnetInfo") -> "SubnetInfo":
+    def _fix_decoded(cls, decoded: Self) -> Self:
         return cls(
             netuid=decoded.get("netuid"),
             rho=decoded.get("rho"),
@@ -669,7 +669,7 @@ class SubnetIdentity(InfoBase):
     additional: str
 
     @classmethod
-    def _fix_decoded(cls, decoded: dict) -> "SubnetIdentity":
+    def _fix_decoded(cls, decoded: dict) -> Self:
         if isinstance(subnet_name := decoded["subnet_name"], list):
             subnet_name = bytes(subnet_name).decode("utf-8")
         return cls(
@@ -712,7 +712,7 @@ class DynamicInfo(InfoBase):
     moving_price: float
 
     @classmethod
-    def _fix_decoded(cls, decoded: Any) -> "DynamicInfo":
+    def _fix_decoded(cls, decoded: Any) -> Self:
         """Returns a DynamicInfo object from a decoded DynamicInfo dictionary."""
 
         netuid = int(decoded.get("netuid"))
@@ -899,9 +899,7 @@ class ColdkeySwapAnnouncementInfo(InfoBase):
     new_coldkey_hash: str
 
     @classmethod
-    def _fix_decoded(
-        cls, coldkey: str, decoded: tuple
-    ) -> "ColdkeySwapAnnouncementInfo":
+    def _fix_decoded(cls, coldkey: str, decoded: tuple) -> Self:
         execution_block, new_coldkey_hash = decoded
         return cls(
             coldkey=coldkey,
@@ -932,7 +930,7 @@ class SubnetState(InfoBase):
     emission_history: list[list[int]]
 
     @classmethod
-    def _fix_decoded(cls, decoded: Any) -> "SubnetState":
+    def _fix_decoded(cls, decoded: Any) -> Self:
         netuid = decoded.get("netuid")
         return cls(
             netuid=netuid,
@@ -980,7 +978,7 @@ class ChainIdentity(InfoBase):
     additional: str
 
     @classmethod
-    def _from_dict(cls, decoded: dict) -> "ChainIdentity":
+    def _from_dict(cls, decoded: dict) -> Self:
         """Returns a ChainIdentity object from decoded chain data."""
         return cls(
             name=decoded["name"],
@@ -1097,7 +1095,7 @@ class MetagraphInfo(InfoBase):
     subuid: int = 0
 
     @classmethod
-    def _fix_decoded(cls, decoded: dict) -> "MetagraphInfo":
+    def _fix_decoded(cls, decoded: dict) -> Self:
         """Returns a MetagraphInfo object from decoded chain data."""
         # Subnet index
         _netuid, _subuid = get_netuid_and_subuid_by_storage_index(decoded["netuid"])
@@ -1211,7 +1209,7 @@ class SimSwapResult:
     alpha_fee: Balance
 
     @classmethod
-    def from_dict(cls, d: dict, netuid: int) -> "SimSwapResult":
+    def from_dict(cls, d: dict, netuid: int) -> Self:
         return cls(
             tao_amount=Balance.from_rao(d["tao_amount"]).set_unit(0),
             alpha_amount=Balance.from_rao(d["alpha_amount"]).set_unit(netuid),
@@ -1236,7 +1234,7 @@ class CrowdloanData(InfoBase):
     call_details: Optional[dict] = None
 
     @classmethod
-    def _fix_decoded(cls, decoded: dict[str, Any]) -> "CrowdloanData":
+    def _fix_decoded(cls, decoded: dict[str, Any]) -> Self:
         creator = decoded.get("creator")
         funds_account = decoded.get("funds_account")
         target_address = decoded.get("target_address")

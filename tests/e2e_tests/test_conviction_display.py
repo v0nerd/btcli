@@ -1,7 +1,6 @@
 import json
 import math
 import time
-import pytest
 
 from .utils import find_stake_entries
 
