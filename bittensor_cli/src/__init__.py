@@ -584,7 +584,6 @@ HYPERPARAMS = {
     "kappa": ("sudo_set_kappa", RootSudoOnly.TRUE),
     "immunity_period": ("sudo_set_immunity_period", RootSudoOnly.FALSE),
     "min_allowed_weights": ("sudo_set_min_allowed_weights", RootSudoOnly.FALSE),
-    "max_weights_limit": ("sudo_set_max_weight_limit", RootSudoOnly.FALSE),
     "tempo": ("sudo_set_tempo", RootSudoOnly.TRUE),
     "weights_version": ("sudo_set_weights_version_key", RootSudoOnly.FALSE),
     "weights_rate_limit": ("sudo_set_weights_set_rate_limit", RootSudoOnly.TRUE),
@@ -666,12 +665,6 @@ HYPERPARAMS_METADATA = {
         "side_effects": "Lower values allow neurons with fewer connections to remain active; higher values enforce stricter connectivity requirements.",
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#minallowedweights",
-    },
-    "max_weights_limit": {
-        "description": "Maximum number of weight connections a neuron can have with other neurons.",
-        "side_effects": "Limits the maximum out-degree of the network graph, affecting network topology and consensus.",
-        "owner_settable": True,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxweightslimit",
     },
     "tempo": {
         "description": "Number of blocks between epoch transitions",
