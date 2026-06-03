@@ -854,7 +854,6 @@ def normalize_hyperparameters(
         "alpha_sigmoid_steepness": u16_normalized_float,
         "min_burn": Balance.from_rao,
         "max_burn": Balance.from_rao,
-        "burn_half_life": u16_normalized_float,
     }
 
     normalized_values: list[tuple[str, str, str]] = []
