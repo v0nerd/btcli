@@ -1,9 +1,22 @@
 # Changelog
 
+## 9.22.1 /2026-06-03
+
+## What's Changed
+
+* Clean up (remove unused imports) by @thewhaleking in https://github.com/latent-to/btcli/pull/983
+* Improved Typing in Chain Data by @thewhaleking in https://github.com/latent-to/btcli/pull/982
+* Get Hyperparams v3 by @thewhaleking in https://github.com/latent-to/btcli/pull/981
+* Update description on btcli lock show command by @chideraao in https://github.com/latent-to/btcli/pull/984
+
+**Full Changelog**: https://github.com/latent-to/btcli/compare/v9.22.0...v9.22.1
+
 ## 9.22.0 /2026-05-28
 
 ## What's Changed
-* fix(cli,wallets): raise on user decline, expand ~ in --json-path, unify regen-key error handling by @RUNECTZ33 in https://github.com/latent-to/btcli/pull/963
+
+* fix(cli,wallets): raise on user decline, expand ~ in --json-path, unify regen-key error handling by @RUNECTZ33
+  in https://github.com/latent-to/btcli/pull/963
 * Strips potentially PID from debug log by @thewhaleking in https://github.com/latent-to/btcli/pull/968
 * fix w set-identity price bug (adjusted) by @thewhaleking in https://github.com/latent-to/btcli/pull/970
 * Adds pr guard workflow by @thewhaleking in https://github.com/latent-to/btcli/pull/972
@@ -16,6 +29,7 @@
 * Feat/conviction by @ibraheem-abe in https://github.com/latent-to/btcli/pull/978
 
 ## New Contributors
+
 * @RUNECTZ33 made their first contribution in https://github.com/latent-to/btcli/pull/963
 
 **Full Changelog**: https://github.com/latent-to/btcli/compare/v9.21.2...v9.22.0
