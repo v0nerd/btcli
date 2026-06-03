@@ -8,6 +8,7 @@
 * Improved Typing in Chain Data by @thewhaleking in https://github.com/latent-to/btcli/pull/982
 * Get Hyperparams v3 by @thewhaleking in https://github.com/latent-to/btcli/pull/981
 * Update description on btcli lock show command by @chideraao in https://github.com/latent-to/btcli/pull/984
+* Fixes burn half life normalization by @thewhaleking in https://github.com/latent-to/btcli/pull/987
 
 **Full Changelog**: https://github.com/latent-to/btcli/compare/v9.22.0...v9.22.1
 
