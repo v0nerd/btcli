@@ -4919,7 +4919,7 @@ class CLIManager:
         json_output: bool = Options.json_output,
     ):
         """
-        View one active stake lock and its local projection.
+        View one active stake lock and its lock projection.
 
         If --netuid is omitted, btcli prompts from the coldkey's active lock
         netuids.
