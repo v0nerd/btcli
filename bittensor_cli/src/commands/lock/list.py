@@ -96,7 +96,7 @@ async def stake_lock_show(
     verbose: bool = False,
     show_graph: bool = True,
 ) -> None:
-    """Display one active stake lock and its local projection."""
+    """Display one active stake lock and its lock projection."""
     if coldkey_ss58 is None:
         raise ValueError("coldkey_ss58 is required")
 
