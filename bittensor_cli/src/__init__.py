@@ -581,17 +581,12 @@ class RootSudoOnly(Enum):
 
 HYPERPARAMS = {
     # btcli name: (subtensor method, root-only enum)
-    "rho": ("sudo_set_rho", RootSudoOnly.FALSE),
     "kappa": ("sudo_set_kappa", RootSudoOnly.TRUE),
     "immunity_period": ("sudo_set_immunity_period", RootSudoOnly.FALSE),
     "min_allowed_weights": ("sudo_set_min_allowed_weights", RootSudoOnly.FALSE),
-    "max_weights_limit": ("sudo_set_max_weight_limit", RootSudoOnly.FALSE),
     "tempo": ("sudo_set_tempo", RootSudoOnly.TRUE),
-    "min_difficulty": ("sudo_set_min_difficulty", RootSudoOnly.TRUE),
-    "max_difficulty": ("sudo_set_max_difficulty", RootSudoOnly.FALSE),
     "weights_version": ("sudo_set_weights_version_key", RootSudoOnly.FALSE),
     "weights_rate_limit": ("sudo_set_weights_set_rate_limit", RootSudoOnly.TRUE),
-    "adjustment_interval": ("sudo_set_adjustment_interval", RootSudoOnly.TRUE),
     "activity_cutoff": ("sudo_set_activity_cutoff", RootSudoOnly.FALSE),
     "target_regs_per_interval": (
         "sudo_set_target_registrations_per_interval",
@@ -603,8 +598,6 @@ HYPERPARAMS = {
     "max_regs_per_block": ("sudo_set_max_registrations_per_block", RootSudoOnly.TRUE),
     "serving_rate_limit": ("sudo_set_serving_rate_limit", RootSudoOnly.FALSE),
     "max_validators": ("sudo_set_max_allowed_validators", RootSudoOnly.TRUE),
-    "adjustment_alpha": ("sudo_set_adjustment_alpha", RootSudoOnly.FALSE),
-    "difficulty": ("sudo_set_difficulty", RootSudoOnly.TRUE),
     "commit_reveal_period": (
         "sudo_set_commit_reveal_weights_interval",
         RootSudoOnly.FALSE,
@@ -632,10 +625,16 @@ HYPERPARAMS = {
     "sn_owner_hotkey": ("sudo_set_sn_owner_hotkey", RootSudoOnly.FALSE),
     "subnet_owner_hotkey": ("sudo_set_sn_owner_hotkey", RootSudoOnly.FALSE),
     "recycle_or_burn": ("sudo_set_recycle_or_burn", RootSudoOnly.FALSE),
+    "owner_cut_enabled": ("sudo_set_owner_cut_enabled", RootSudoOnly.FALSE),
+    "owner_cut_auto_lock_enabled": (
+        "sudo_set_owner_cut_auto_lock_enabled",
+        RootSudoOnly.FALSE,
+    ),
     # Note: These are displayed but not directly settable via HYPERPARAMS
     # They are derived or set via other mechanisms
     "alpha_high": ("", RootSudoOnly.FALSE),  # Derived from alpha_values
     "alpha_low": ("", RootSudoOnly.FALSE),  # Derived from alpha_values
+    #
     "subnet_is_active": ("", RootSudoOnly.FALSE),  # Set via btcli subnets start
     "yuma_version": ("", RootSudoOnly.FALSE),  # Related to yuma3_enabled
     "max_allowed_uids": ("sudo_set_max_allowed_uids", RootSudoOnly.FALSE),
@@ -649,12 +648,6 @@ HYPERPARAMS_MODULE = {
 
 # Hyperparameter metadata: descriptions, side-effects, ownership, and documentation links
 HYPERPARAMS_METADATA = {
-    "rho": {
-        "description": "Rho controls the rate at which weights decay over time.",
-        "side_effects": "Changing rho affects how quickly neurons' influence diminishes, impacting consensus dynamics.",
-        "owner_settable": True,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#rho",
-    },
     "kappa": {
         "description": "Kappa determines the scaling factor for consensus calculations.",
         "side_effects": "Modifying kappa changes how validator votes are weighted in consensus mechanisms.",
@@ -673,29 +666,11 @@ HYPERPARAMS_METADATA = {
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#minallowedweights",
     },
-    "max_weights_limit": {
-        "description": "Maximum number of weight connections a neuron can have with other neurons.",
-        "side_effects": "Limits the maximum out-degree of the network graph, affecting network topology and consensus.",
-        "owner_settable": True,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxweightslimit",
-    },
     "tempo": {
         "description": "Number of blocks between epoch transitions",
         "side_effects": "Lower tempo means more frequent updates but higher chain load. Higher tempo reduces frequency but may slow responsiveness.",
         "owner_settable": False,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#tempo",
-    },
-    "min_difficulty": {
-        "description": "Minimum proof-of-work difficulty required for registration",
-        "side_effects": "Increasing min_difficulty raises the computational barrier for new neuron registrations.",
-        "owner_settable": False,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#mindifficulty",
-    },
-    "max_difficulty": {
-        "description": "Maximum proof-of-work difficulty cap.",
-        "side_effects": "Caps the maximum computational requirement, ensuring registration remains feasible.",
-        "owner_settable": True,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxdifficulty",
     },
     "weights_version": {
         "description": "Version key for weight sets.",
@@ -708,12 +683,6 @@ HYPERPARAMS_METADATA = {
         "side_effects": "Lower values reduce chain load but may limit legitimate weight updates. Higher values allow more flexibility.",
         "owner_settable": False,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#weightsratelimit--commitmentratelimit",
-    },
-    "adjustment_interval": {
-        "description": "Number of blocks between automatic difficulty adjustments.",
-        "side_effects": "Shorter intervals make difficulty more responsive but may cause volatility. Longer intervals provide stability.",
-        "owner_settable": False,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#adjustmentinterval",
     },
     "activity_cutoff": {
         "description": "Minimum activity level required for neurons to remain active.",
@@ -762,18 +731,6 @@ HYPERPARAMS_METADATA = {
         "side_effects": "Lower values reduce consensus overhead but limit decentralization. Higher values increase decentralization but may slow consensus.",
         "owner_settable": False,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxallowedvalidators",
-    },
-    "adjustment_alpha": {
-        "description": "Alpha parameter for difficulty adjustment algorithm.",
-        "side_effects": "Higher values make difficulty adjustments more aggressive; lower values provide smoother transitions.",
-        "owner_settable": True,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#adjustmentalpha",
-    },
-    "difficulty": {
-        "description": "Current proof-of-work difficulty for registration.",
-        "side_effects": "Directly affects registration cost and time. Higher difficulty makes registration harder and more expensive.",
-        "owner_settable": False,
-        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#difficulty",
     },
     "commit_reveal_period": {
         "description": "Duration (in blocks) for commit-reveal weight submission scheme.",
@@ -895,6 +852,30 @@ HYPERPARAMS_METADATA = {
         "side_effects": "See description for min_allowed_uids",
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#maxalloweduids",
+    },
+    "owner_cut_enabled": {
+        "description": "Whether the subnet owner cut is taken from the subnet's emissions.",
+        "side_effects": "When disabled, no owner cut is deducted and the full emission goes to the subnet participants.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#ownercutenabled",
+    },
+    "owner_cut_auto_lock_enabled": {
+        "description": "Whether the subnet owner cut is automatically locked when collected.",
+        "side_effects": "When enabled, the owner cut is auto-locked rather than paid out as liquid stake.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#ownercutautolockenabled",
+    },
+    "burn_half_life": {
+        "description": "Half-life (in blocks) controlling how quickly the registration burn price decays back toward min_burn.",
+        "side_effects": "Larger values make the registration burn price decay more slowly after registrations; smaller values let it fall back to min_burn faster.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#burnhalflife",
+    },
+    "burn_increase_mult": {
+        "description": "Multiplier applied to the registration burn price after each successful registration.",
+        "side_effects": "Higher values make the burn price jump more sharply with each registration, raising the cost of rapid successive registrations.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#burnincreasemult",
     },
 }
 

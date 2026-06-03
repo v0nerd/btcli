@@ -12,7 +12,6 @@ import ssl
 import sys
 import traceback
 import warnings
-from dataclasses import fields
 from pathlib import Path
 from typing import Coroutine, Optional, Union
 
@@ -48,7 +47,6 @@ from bittensor_cli.src import (
 )
 from bittensor_cli.src.bittensor import utils
 from bittensor_cli.src.bittensor.balances import Balance
-from bittensor_cli.src.bittensor.chain_data import SubnetHyperparameters
 from bittensor_cli.src.bittensor.subtensor_interface import (
     SubtensorInterface,
     best_connection,
@@ -4921,7 +4919,7 @@ class CLIManager:
         json_output: bool = Options.json_output,
     ):
         """
-        View one active stake lock and its local projection.
+        View one active stake lock and its lock projection.
 
         If --netuid is omitted, btcli prompts from the coldkey's active lock
         netuids.
@@ -7349,9 +7347,7 @@ class CLIManager:
                     "Param name not supplied with `--no-prompt` flag. Cannot continue"
                 )
                 return False
-            hyperparam_list = sorted(
-                [field.name for field in fields(SubnetHyperparameters)]
-            )
+            hyperparam_list = sorted(HYPERPARAMS.keys())
             console.print("Available hyperparameters:\n")
 
             # Create a table to show hyperparameters with descriptions
