@@ -1460,6 +1460,11 @@ async def show(
             ),
         )
 
+        # Append a LEFT-TO-RIGHT MARK to the symbol so RTL symbols
+        # don't get BiDi-reordered by terminals like
+        # Terminal.app, which misaligns the table columns.
+        symbol = f"{subnet_info.symbol}‎"
+
         rows = []
         json_out_rows = []
         for idx in sorted_indices:
@@ -1500,25 +1505,25 @@ async def show(
             conv_cell = _format_conviction_cell(
                 conviction=conv_value,
                 netuid=netuid_,
-                symbol=subnet_info.symbol,
+                symbol=symbol,
                 verbose=verbose,
             )
 
             rows.append(
                 (
                     str(idx),  # UID
-                    f"{metagraph_info.total_stake[idx].tao:.4f} {subnet_info.symbol}"
+                    f"{metagraph_info.total_stake[idx].tao:.4f} {symbol}"
                     if verbose
-                    else f"{millify_tao(metagraph_info.total_stake[idx])} {subnet_info.symbol}",  # Stake
-                    f"{metagraph_info.alpha_stake[idx].tao:.4f} {subnet_info.symbol}"
+                    else f"{millify_tao(metagraph_info.total_stake[idx])} {symbol}",  # Stake
+                    f"{metagraph_info.alpha_stake[idx].tao:.4f} {symbol}"
                     if verbose
-                    else f"{millify_tao(metagraph_info.alpha_stake[idx])} {subnet_info.symbol}",  # Alpha Stake
+                    else f"{millify_tao(metagraph_info.alpha_stake[idx])} {symbol}",  # Alpha Stake
                     f"τ {tao_stake.tao:.4f}"
                     if verbose
                     else f"τ {millify_tao(tao_stake)}",  # Tao Stake
                     f"{metagraph_info.dividends[idx]:.6f}",  # Dividends
                     f"{metagraph_info.incentives[idx]:.6f}",  # Incentive
-                    f"{Balance.from_tao(metagraph_info.emission[idx].tao).set_unit(netuid_).tao:.6f} {subnet_info.symbol}",  # Emissions
+                    f"{Balance.from_tao(metagraph_info.emission[idx].tao).set_unit(netuid_).tao:.6f} {symbol}",  # Emissions
                     conv_cell,  # Conv. (α-eq)
                     f"{metagraph_info.hotkeys[idx][:6]}"
                     if not verbose
@@ -1565,31 +1570,31 @@ async def show(
         # Add columns to the table
         table.add_column("UID", style="grey89", no_wrap=True, justify="center")
         table.add_column(
-            f"Stake ({subnet_info.symbol})",
+            f"Stake ({symbol})",
             style=COLOR_PALETTE["POOLS"]["ALPHA_IN"],
             no_wrap=True,
             justify="right",
-            footer=f"{stake_sum:.4f} {subnet_info.symbol}"
+            footer=f"{stake_sum:.4f} {symbol}"
             if verbose
-            else f"{millify_tao(stake_sum)} {subnet_info.symbol}",
+            else f"{millify_tao(stake_sum)} {symbol}",
         )
         table.add_column(
-            f"Alpha ({subnet_info.symbol})",
+            f"Alpha ({symbol})",
             style=COLOR_PALETTE["POOLS"]["EXTRA_2"],
             no_wrap=True,
             justify="right",
-            footer=f"{alpha_sum:.4f} {subnet_info.symbol}"
+            footer=f"{alpha_sum:.4f} {symbol}"
             if verbose
-            else f"{millify_tao(alpha_sum)} {subnet_info.symbol}",
+            else f"{millify_tao(alpha_sum)} {symbol}",
         )
         table.add_column(
             "Tao (τ)",
             style=COLOR_PALETTE["POOLS"]["EXTRA_2"],
             no_wrap=True,
             justify="right",
-            footer=f"{tao_sum:.4f} {subnet_info.symbol}"
+            footer=f"{tao_sum:.4f} {symbol}"
             if verbose
-            else f"{millify_tao(tao_sum)} {subnet_info.symbol}",
+            else f"{millify_tao(tao_sum)} {symbol}",
         )
         table.add_column(
             "Dividends",
@@ -1600,14 +1605,14 @@ async def show(
         )
         table.add_column("Incentive", style="#5fd7ff", no_wrap=True, justify="center")
         table.add_column(
-            f"Emissions ({subnet_info.symbol})",
+            f"Emissions ({symbol})",
             style=COLOR_PALETTE["POOLS"]["EMISSION"],
             no_wrap=True,
             justify="center",
-            footer=f"{emission_sum:.4f} {subnet_info.symbol}",
+            footer=f"{emission_sum:.4f} {symbol}",
         )
         table.add_column(
-            f"Conviction ({subnet_info.symbol}-eq)",
+            f"Conviction ({symbol}-eq)",
             style=COLOR_PALETTE["POOLS"]["EXTRA_2"],
             no_wrap=True,
             justify="center",
@@ -1668,9 +1673,9 @@ async def show(
             total_mechanisms = mechanism_count if mechanism_count is not None else 1
             _total_locked = Balance.from_rao(total_locked_rao).set_unit(netuid_)
             total_locked = (
-                f"{millify_tao(_total_locked.tao)} {subnet_info.symbol}"
+                f"{millify_tao(_total_locked.tao)} {symbol}"
                 if not verbose
-                else f"{_total_locked.tao:.4f} {subnet_info.symbol}"
+                else f"{_total_locked.tao:.4f} {symbol}"
             )
 
             output_dict = {
@@ -1714,11 +1719,11 @@ async def show(
                 f"{mech_line}"
                 f"{total_mech_line}"
                 f"\n  Owner: [{COLOR_PALETTE['GENERAL']['COLDKEY']}]{subnet_info.owner_coldkey}{' (' + owner_identity + ')' if owner_identity else ''}[/{COLOR_PALETTE['GENERAL']['COLDKEY']}]"
-                f"\n  Rate: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]{subnet_info.price.tao:.4f} τ/{subnet_info.symbol}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
+                f"\n  Rate: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]{subnet_info.price.tao:.4f} τ/{symbol}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
                 f"\n  EMA TAO Inflow: [{COLOR_PALETTE['STAKE']['TAO']}]τ {ema_tao_inflow.tao:.4f}[/{COLOR_PALETTE['STAKE']['TAO']}]"
                 f"\n  Emission: [{COLOR_PALETTE['GENERAL']['HOTKEY']}]τ {subnet_info.tao_in_emission.tao:,.4f}[/{COLOR_PALETTE['GENERAL']['HOTKEY']}]"
                 f"\n  TAO Pool: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]τ {tao_pool}[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
-                f"\n  Alpha Pool: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]{alpha_pool} {subnet_info.symbol}[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
+                f"\n  Alpha Pool: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}]{alpha_pool} {symbol}[/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
                 f"\n  Total locked: [{COLOR_PALETTE['POOLS']['ALPHA_IN']}] {total_locked} [/{COLOR_PALETTE['POOLS']['ALPHA_IN']}]"
                 # f"\n  Stake: [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]{subnet_info.alpha_out.tao:,.5f} {subnet_info.symbol}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
                 f"\n  Tempo: [{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]{subnet_info.blocks_since_last_step}/{subnet_info.tempo}[/{COLOR_PALETTE['STAKE']['STAKE_ALPHA']}]"
