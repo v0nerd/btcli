@@ -2782,9 +2782,9 @@ class SubtensorInterface:
         """
         Gets the current Alpha prices in TAO for all subnets.
 
-        Prefers the ``SwapRuntimeApi::current_alpha_price_all`` runtime call (Balancer swap), falling
-        back to per-subnet ``current_alpha_price`` calls, and finally to the legacy
-        ``Swap::AlphaSqrtPrice`` storage map for pre-Balancer chains.
+        Prefers the `SwapRuntimeApi::current_alpha_price_all` runtime call (Balancer swap), falling
+        back to per-subnet `current_alpha_price` calls, and finally to the legacy
+        `Swap::AlphaSqrtPrice` storage map for pre-Balancer chains.
 
         :param block_hash: The hash of the block to retrieve prices from.
         :param page_size: The page size for the legacy storage fallback query.
