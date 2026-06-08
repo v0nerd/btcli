@@ -496,7 +496,7 @@ async def subnets_list(
         )
         defined_table.add_column(
             f"[bold white]Stake ({Balance.get_unit(1)}_out)",
-            style=COLOR.STAKE_ALPHA,
+            style=COLOR.S.ALPHA,
             justify="left",
         )
         defined_table.add_column(
