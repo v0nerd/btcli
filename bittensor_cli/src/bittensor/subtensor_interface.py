@@ -2706,6 +2706,39 @@ class SubtensorInterface:
             results[hotkey][netuid] = net_claimable.set_unit(netuid)
         return results
 
+    async def _runtime_method_exists(
+        self, api: str, method: str, block_hash: Optional[str] = None
+    ) -> bool:
+        """
+        Checks whether a runtime call method exists at the given block.
+
+        :param api: The runtime API name (e.g. `"SwapRuntimeApi"`).
+        :param method: The method within the runtime API to check for.
+        :param block_hash: The hash of the block at which to check.
+
+        :return: `True` if the runtime call method exists, `False` otherwise.
+        """
+        runtime = await self.substrate.init_runtime(block_hash=block_hash)
+        try:
+            _ = runtime.runtime_api_map[api][method]
+            return True
+        except KeyError:
+            return False
+
+    async def _get_subnet_price_from_storage(
+        self, netuid: int, block_hash: Optional[str] = None
+    ) -> Balance:
+        """Legacy Alpha-price lookup for pre-Balancer chains via ``Swap::AlphaSqrtPrice``."""
+        current_sqrt_price = await self.query(
+            module="Swap",
+            storage_function="AlphaSqrtPrice",
+            params=[netuid],
+            block_hash=block_hash,
+        )
+        current_sqrt_price = fixed_to_float(current_sqrt_price)
+        current_price = current_sqrt_price * current_sqrt_price
+        return Balance.from_rao(int(current_price * 1e9))
+
     async def get_subnet_price(
         self,
         netuid: int = None,
@@ -2714,22 +2747,34 @@ class SubtensorInterface:
         """
         Gets the current Alpha price in TAO for a specific subnet.
 
+        Uses the `SwapRuntimeApi::current_alpha_price` runtime call (Balancer swap). If the connected
+        chain does not expose that runtime method, falls back to the legacy `Swap::AlphaSqrtPrice`
+        storage query so the CLI keeps working against pre-Balancer chains. Note this is only necessary to exist
+        until mainnet release, as it allows for working with the staging branch on live data until then.
+
         :param netuid: The unique identifier of the subnet.
         :param block_hash: The hash of the block to retrieve the price from.
 
         :return: The current Alpha price in TAO units for the specified subnet.
         """
-        # TODO update this to use the runtime call SwapRuntimeAPI.current_alpha_price
-        current_sqrt_price = await self.query(
-            module="Swap",
-            storage_function="AlphaSqrtPrice",
-            params=[netuid],
-            block_hash=block_hash,
-        )
+        # SN0 (root) uses TAO directly and always has a price of 1 TAO.
+        if netuid == 0:
+            return Balance.from_tao(1)
 
-        current_sqrt_price = fixed_to_float(current_sqrt_price)
-        current_price = current_sqrt_price * current_sqrt_price
-        return Balance.from_rao(int(current_price * 1e9))
+        if await self._runtime_method_exists(
+            "SwapRuntimeApi", "current_alpha_price", block_hash=block_hash
+        ):
+            price_rao = await self.query_runtime_api(
+                "SwapRuntimeApi",
+                "current_alpha_price",
+                params=[netuid],
+                block_hash=block_hash,
+            )
+            return Balance.from_rao(int(price_rao))
+        else:
+            return await self._get_subnet_price_from_storage(
+                netuid, block_hash=block_hash
+            )
 
     async def get_subnet_prices(
         self, block_hash: Optional[str] = None, page_size: int = 200
@@ -2737,11 +2782,43 @@ class SubtensorInterface:
         """
         Gets the current Alpha prices in TAO for all subnets.
 
+        Prefers the `SwapRuntimeApi::current_alpha_price_all` runtime call (Balancer swap), falling
+        back to per-subnet `current_alpha_price` calls, and finally to the legacy
+        `Swap::AlphaSqrtPrice` storage map for pre-Balancer chains.
+
         :param block_hash: The hash of the block to retrieve prices from.
-        :param page_size: The page size for batch queries (default: 100).
+        :param page_size: The page size for the legacy storage fallback query.
 
         :return: A dictionary mapping netuid to the current Alpha price in TAO units.
         """
+        if block_hash is None:
+            block_hash = await self.substrate.get_chain_head()
+
+        if await self._runtime_method_exists(
+            "SwapRuntimeApi", "current_alpha_price_all", block_hash=block_hash
+        ):
+            prices_rao = await self.query_runtime_api(
+                "SwapRuntimeApi",
+                "current_alpha_price_all",
+                block_hash=block_hash,
+            )
+            return {
+                int(p["netuid"]): Balance.from_rao(int(p["price"])) for p in prices_rao
+            }
+
+        if await self._runtime_method_exists(
+            "SwapRuntimeApi", "current_alpha_price", block_hash=block_hash
+        ):
+            netuids = await self.get_all_subnet_netuids(block_hash=block_hash)
+            prices_list = await asyncio.gather(
+                *[
+                    self.get_subnet_price(netuid, block_hash=block_hash)
+                    for netuid in netuids
+                ]
+            )
+            return dict(zip(netuids, prices_list))
+
+        # Legacy fallback for pre-Balancer chains.
         query = await self.substrate.query_map(
             module="Swap",
             storage_function="AlphaSqrtPrice",
