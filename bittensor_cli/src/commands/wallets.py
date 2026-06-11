@@ -1213,7 +1213,9 @@ async def overview(
             validator_trust = nn.validator_trust
             incentive = nn.incentive
             dividends = nn.dividends
-            emission = int(nn.emission / (subnet_tempo + 1) * 1e9)  # Per block
+            # Per block: the epoch period is exactly tempo blocks under the
+            # dynamic-tempo scheduler (guard against tempo == 0).
+            emission = int(nn.emission / max(subnet_tempo, 1) * 1e9)
             last_update = int(block - nn.last_update)
             validator_permit = nn.validator_permit
             row = [

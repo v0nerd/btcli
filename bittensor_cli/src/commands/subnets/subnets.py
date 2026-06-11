@@ -932,9 +932,10 @@ async def subnets_list(
                         subnet.blocks_since_last_step - prev_blocks_since_last_step
                     )
                 else:
-                    # Tempo restarted
+                    # Tempo restarted; the epoch period is exactly tempo blocks
+                    # under the dynamic-tempo scheduler.
                     block_change = (
-                        subnet.blocks_since_last_step + subnet.tempo + 1
+                        subnet.blocks_since_last_step + subnet.tempo
                     ) - prev_blocks_since_last_step
                 if block_change > 0:
                     block_change_text = f" [pale_green3](+{block_change})[/pale_green3]"
