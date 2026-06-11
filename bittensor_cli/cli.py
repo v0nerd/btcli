@@ -7321,7 +7321,6 @@ class CLIManager:
             console.print("Available hyperparameters:\n")
 
             # Create a table to show hyperparameters with descriptions
-
             param_table = Table(
                 Column("[white]#", style="dim", width=4),
                 Column("[white]HYPERPARAMETER", style=COLORS.SU.HYPERPARAMETER),
@@ -7369,19 +7368,13 @@ class CLIManager:
                 description = metadata.get("description", "No description available.")
                 docs_link = metadata.get("docs_link", "")
                 if docs_link:
-                    # Show description text followed by clickable blue [link] at the end
                     console.print(
                         f"{description} [bright_blue underline link=https://{docs_link}]link[/]"
                     )
                 else:
                     console.print(f"{description}")
-                side_effects = metadata.get("side_effects", "")
-                if side_effects:
+                if side_effects := metadata.get("side_effects", ""):
                     console.print(f"[dim]Side Effects:[/dim] {side_effects}")
-                if docs_link:
-                    console.print(
-                        f"[dim]📚 Docs:[/dim] [link]https://{docs_link}[/link]\n"
-                    )
 
         if param_name in ["alpha_high", "alpha_low"]:
             if not prompt:
@@ -7390,16 +7383,13 @@ class CLIManager:
                     "They must be set together via the alpha_values parameter."
                 )
                 if json_output:
-                    json_str = json.dumps(
-                        {
+                    json_console.print_json(
+                        data={
                             "success": False,
                             "err_msg": err_msg,
                             "extrinsic_identifier": None,
-                        },
-                        ensure_ascii=True,
+                        }
                     )
-                    sys.stdout.write(json_str + "\n")
-                    sys.stdout.flush()
                 else:
                     print_error(
                         f"[{COLORS.SU.HYPERPARAM}]alpha_high[/{COLORS.SU.HYPERPARAM}] and "
@@ -7411,23 +7401,20 @@ class CLIManager:
             low_val = FloatPrompt.ask(f"Enter the new value for {arg__('alpha_low')}")
             high_val = FloatPrompt.ask(f"Enter the new value for {arg__('alpha_high')}")
             param_value = f"{low_val},{high_val}"
-        if param_name == "yuma_version":
+        elif param_name == "yuma_version":
             if not prompt:
                 err_msg = (
                     "yuma_version is set using a different hyperparameter (yuma3_enabled), "
                     "and thus cannot be set with `--no-prompt`"
                 )
                 if json_output:
-                    json_str = json.dumps(
-                        {
+                    json_console.print_json(
+                        data={
                             "success": False,
                             "err_msg": err_msg,
                             "extrinsic_identifier": None,
-                        },
-                        ensure_ascii=True,
+                        }
                     )
-                    sys.stdout.write(json_str + "\n")
-                    sys.stdout.flush()
                 else:
                     print_error(
                         f"[{COLORS.SU.HYPERPARAM}]yuma_version[/{COLORS.SU.HYPERPARAM}]"
