@@ -14,6 +14,7 @@ from bittensor_cli.src import (
     HYPERPARAMS,
     HYPERPARAMS_MODULE,
     HYPERPARAMS_METADATA,
+    HYPERPARAMS_ROOT_EXTRINSIC,
     RootSudoOnly,
     COLOR_PALETTE,
 )
@@ -389,6 +390,7 @@ def search_metadata(
         "immunity_period": int,
         "commit_reveal_period": int,
         "adjustment_interval": int,
+        "factor_milli": int,
         "max_validators": int,
         "min_allowed_weights": int,
         "rho": int,
@@ -404,6 +406,7 @@ def search_metadata(
         "bool": string_to_bool,
         "u16": string_to_u16,
         "i16": string_to_i16,
+        "u32": int,
         "u64": string_to_u64,
         "MechId": int,
         "U64F64": string_to_u64f64,
@@ -413,6 +416,7 @@ def search_metadata(
         "bool": "bool",
         "u16": "float",
         "i16": "float (signed)",
+        "u32": "int",
         "u64": "float",
         "U64F64": "decimal",
         "TaoBalance": "Tao (float)",
@@ -607,13 +611,17 @@ async def set_hyperparameter_extrinsic(
     arbitrary_extrinsic = False
 
     extrinsic, sudo_ = HYPERPARAMS.get(parameter, ("", RootSudoOnly.FALSE))
+    # Resolve pallet and root-path override before `parameter` is potentially
+    # reassigned to the extrinsic name in normalize mode.
+    pallet = HYPERPARAMS_MODULE.get(parameter) or DEFAULT_PALLET
+    root_override = HYPERPARAMS_ROOT_EXTRINSIC.get(parameter)
     call_params = {"netuid": netuid}
     if normalize and parameter != "alpha_values":
         parameter = extrinsic
         extrinsic = None
     if not extrinsic:
         arbitrary_extrinsic, call_params = search_metadata(
-            parameter, value, netuid, subtensor.substrate.metadata
+            parameter, value, netuid, subtensor.substrate.metadata, pallet_name=pallet
         )
         extrinsic = parameter
         if not arbitrary_extrinsic:
@@ -633,7 +641,6 @@ async def set_hyperparameter_extrinsic(
 
     substrate = subtensor.substrate
     msg_value = value if not arbitrary_extrinsic else call_params
-    pallet = HYPERPARAMS_MODULE.get(parameter) or DEFAULT_PALLET
 
     if not arbitrary_extrinsic:
         extrinsic_params = await substrate.get_metadata_call_function(
@@ -693,12 +700,7 @@ async def set_hyperparameter_extrinsic(
                 quiet=quiet,
             )
         if to_sudo_or_not_to_sudo:
-            call = await substrate.compose_call(
-                call_module="Sudo",
-                call_function="sudo",
-                call_params={"call": call_},
-                block_hash=block_hash,
-            )
+            call = await sudo_wrapped()
         else:
             if subnet_owner != coldkey_ss58:
                 err_msg = "This wallet doesn't own the specified subnet."
