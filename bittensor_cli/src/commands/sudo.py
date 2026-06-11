@@ -67,6 +67,15 @@ def allowed_value(
     """
     try:
         if not isinstance(value, bool):
+            if param == "activity_cutoff_factor":
+                # Bounds mirror MIN/MAX_ACTIVITY_CUTOFF_FACTOR_MILLI in subtensor.
+                factor = int(value)
+                if not 1_000 <= factor <= 50_000:
+                    return (
+                        False,
+                        "between 1000 and 50000 (per-mille units; 1000 = one full tempo)",
+                    )
+                return True, factor
             if param == "alpha_values":
                 # Split the string into individual values
                 alpha_low_str, alpha_high_str = value.split(",")
