@@ -681,13 +681,28 @@ async def set_hyperparameter_extrinsic(
         call_params=call_params,
         block_hash=block_hash,
     )
-    if sudo_ is RootSudoOnly.TRUE:
-        call = await substrate.compose_call(
+
+    async def sudo_wrapped() -> GenericCall:
+        # Root-sudo path: some hyperparams use a dedicated root extrinsic (e.g.
+        # AdminUtils.sudo_set_tempo) instead of Sudo-wrapping the owner call.
+        inner_call = call_
+        if root_override:
+            root_pallet, root_extrinsic = root_override
+            inner_call = await substrate.compose_call(
+                call_module=root_pallet,
+                call_function=root_extrinsic,
+                call_params=call_params,
+                block_hash=block_hash,
+            )
+        return await substrate.compose_call(
             call_module="Sudo",
             call_function="sudo",
-            call_params={"call": call_},
+            call_params={"call": inner_call},
             block_hash=block_hash,
         )
+
+    if sudo_ is RootSudoOnly.TRUE:
+        call = await sudo_wrapped()
     elif sudo_ is RootSudoOnly.COMPLICATED:
         if not prompt:
             # In no-prompt mode, owners should take the owner path; non-owners
