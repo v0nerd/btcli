@@ -643,6 +643,10 @@ HYPERPARAMS = {
     "max_allowed_uids": ("sudo_set_max_allowed_uids", RootSudoOnly.FALSE),
     "burn_increase_mult": ("sudo_set_burn_increase_mult", RootSudoOnly.FALSE),
     "burn_half_life": ("sudo_set_burn_half_life", RootSudoOnly.FALSE),
+    "min_childkey_take": (
+        "sudo_set_min_childkey_take_per_subnet",
+        RootSudoOnly.FALSE,
+    ),
 }
 
 # Maps a hyperparameter to a non-default pallet for sudo set calls. Hyperparameters
@@ -890,6 +894,12 @@ HYPERPARAMS_METADATA = {
         "side_effects": "Higher values make the burn price jump more sharply with each registration, raising the cost of rapid successive registrations.",
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#burnincreasemult",
+    },
+    "min_childkey_take": {
+        "description": "Minimum childkey take (%) required on this subnet. Settable by the subnet owner. Cannot be set below the global protocol minimum.",
+        "side_effects": "Child hotkeys on this subnet must set take at or above this value.",
+        "owner_settable": True,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#minchildkeytake",
     },
 }
 

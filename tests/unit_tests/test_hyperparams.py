@@ -111,3 +111,19 @@ def test_activity_cutoff_factor_allowed_value_bounds():
 
     ok, _ = allowed_value("activity_cutoff_factor", "not_a_number", normalize=False)
     assert ok is False
+
+
+def test_min_childkey_take_in_hyperparams():
+    extrinsic, root_only = HYPERPARAMS["min_childkey_take"]
+    assert extrinsic == "sudo_set_min_childkey_take_per_subnet"
+    assert root_only is RootSudoOnly.FALSE
+
+
+def test_min_childkey_take_has_metadata():
+    required = {"description", "side_effects", "owner_settable", "docs_link"}
+    assert "min_childkey_take" in HYPERPARAMS_METADATA
+    meta = HYPERPARAMS_METADATA["min_childkey_take"]
+    for field in required:
+        assert field in meta, f"min_childkey_take metadata missing '{field}'"
+    assert meta["owner_settable"] is True
+    assert "#minchildkeytake" in meta["docs_link"]
