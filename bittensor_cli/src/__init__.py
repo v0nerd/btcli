@@ -642,9 +642,20 @@ HYPERPARAMS = {
     "burn_half_life": ("sudo_set_burn_half_life", RootSudoOnly.FALSE),
 }
 
-# Maps a hyperparameter to a non-default pallet for sudo set calls. Empty by default
-# (all current hyperparameters live in the default pallet).
-HYPERPARAMS_MODULE: dict[str, str] = {}
+# Maps a hyperparameter to a non-default pallet for sudo set calls. Hyperparameters
+# not listed here live in the default pallet (AdminUtils).
+HYPERPARAMS_MODULE: dict[str, str] = {
+    "tempo": "SubtensorModule",
+    "activity_cutoff_factor": "SubtensorModule",
+}
+
+# Hyperparameters whose root-sudo path uses a different extrinsic than the owner path.
+# Maps btcli name -> (pallet, extrinsic) for the call wrapped in Sudo. Owner-side
+# set_tempo is bounded to [360, 50400] and rate-limited; root's sudo_set_tempo accepts
+# any u16 value.
+HYPERPARAMS_ROOT_EXTRINSIC: dict[str, tuple[str, str]] = {
+    "tempo": ("AdminUtils", "sudo_set_tempo"),
+}
 
 # Hyperparameter metadata: descriptions, side-effects, ownership, and documentation links
 HYPERPARAMS_METADATA = {
@@ -667,9 +678,9 @@ HYPERPARAMS_METADATA = {
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#minallowedweights",
     },
     "tempo": {
-        "description": "Number of blocks between epoch transitions",
-        "side_effects": "Lower tempo means more frequent updates but higher chain load. Higher tempo reduces frequency but may slow responsiveness.",
-        "owner_settable": False,
+        "description": "Number of blocks between automatic epoch transitions. Owner-settable between 360 and 50400 blocks (rate-limited to one change per 360 blocks); root can set any value via sudo.",
+        "side_effects": "Lower tempo means more frequent updates but higher chain load. Higher tempo reduces frequency but may slow responsiveness. Changing tempo resets the epoch cycle, so the next epoch fires a full tempo after the change.",
+        "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#tempo",
     },
     "weights_version": {
@@ -685,8 +696,14 @@ HYPERPARAMS_METADATA = {
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#weightsratelimit--commitmentratelimit",
     },
     "activity_cutoff": {
-        "description": "Minimum activity level required for neurons to remain active.",
-        "side_effects": "Lower values keep more neurons active; higher values prune inactive neurons more aggressively.",
+        "description": "Effective validator inactivity cutoff in blocks, computed as activity_cutoff_factor × tempo ÷ 1000. Read-only; set activity_cutoff_factor instead.",
+        "side_effects": "Lower values prune inactive validators more aggressively; higher values keep more validators active.",
+        "owner_settable": False,
+        "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#activitycutoff",
+    },
+    "activity_cutoff_factor": {
+        "description": "Tolerated validator inactivity as per-mille of tempo (1000 = one full tempo). Effective cutoff in blocks = factor × tempo ÷ 1000. Allowed range: 1000 to 50000.",
+        "side_effects": "Lower factors prune inactive validators more aggressively; higher factors tolerate longer inactivity. The effective cutoff scales with tempo.",
         "owner_settable": True,
         "docs_link": "docs.learnbittensor.org/subnets/subnet-hyperparameters#activitycutoff",
     },
