@@ -48,7 +48,7 @@ from bittensor_cli.src.bittensor.utils import (
     ProxyAnnouncements,
 )
 from scalecodec.base import ScaleType
-from scalecodec.utils.math import fixed_to_decimal
+from scalecodec.utils.math import fixed_to_decimal, FixedPoint
 
 GENESIS_ADDRESS = "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM"
 
@@ -2523,7 +2523,7 @@ class SubtensorInterface:
         Returns:
             dict[int, float]: Dictionary mapping netuid to claimable rate.
         """
-        query = await self.query(
+        query: dict[int, FixedPoint] = await self.query(
             module="SubtensorModule",
             storage_function="RootClaimable",
             params=[hotkey_ss58],
@@ -2533,8 +2533,10 @@ class SubtensorInterface:
         if not query:
             return {}
 
-        bits_list = next(iter(query))
-        return {bits[0]: fixed_to_float(bits[1], frac_bits=32) for bits in bits_list}
+        return {
+            netuid: fixed_to_float(bits, frac_bits=32)
+            for (netuid, bits) in query.items()
+        }
 
     async def get_claimable_rate_netuid(
         self,
