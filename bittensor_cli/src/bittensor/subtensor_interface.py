@@ -1653,6 +1653,29 @@ class SubtensorInterface:
 
         return SubnetHyperparameters.from_any(result)
 
+    async def get_next_epoch_start_block(
+        self, netuid: int, block_hash: Optional[str] = None
+    ) -> Optional[int]:
+        """
+        Returns the block number at which the subnet's next epoch is expected to fire,
+        considering both the automatic schedule and any pending owner-triggered epoch.
+        It does not account for per-block epoch-cap deferrals, which can push the
+        actual firing block slightly later.
+
+        Returns `None` if the subnet does not run epochs (tempo == 0) or if the chain
+        does not expose the runtime API (runtimes without dynamic tempo).
+        """
+        try:
+            result = await self.query_runtime_api(
+                runtime_api="SubnetInfoRuntimeApi",
+                method="get_next_epoch_start_block",
+                params=[netuid],
+                block_hash=block_hash,
+            )
+        except (ValueError, SubstrateRequestException):
+            return None
+        return None if result is None else int(result)
+
     async def get_subnet_mechanisms(
         self, netuid: int, block_hash: Optional[str] = None
     ) -> int:
