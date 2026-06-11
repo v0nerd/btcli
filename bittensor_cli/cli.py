@@ -7448,6 +7448,32 @@ class CLIManager:
                 param_value = "true" if question == "enable" else "false"
             else:
                 return False
+        elif param_name == "activity_cutoff":
+            err_msg = (
+                "activity_cutoff is now derived from activity_cutoff_factor "
+                "(cutoff blocks = factor × tempo ÷ 1000) and can no longer be set "
+                "directly. Set activity_cutoff_factor instead (per-mille units; "
+                "1000 = one full tempo)."
+            )
+            if json_output:
+                json_console.print_json(
+                    data={
+                        "success": False,
+                        "err_msg": err_msg,
+                        "extrinsic_identifier": None,
+                    }
+                )
+            else:
+                print_error(
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff[/{COLORS.SU.HYPERPARAM}] "
+                    f"is now derived from "
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff_factor[/{COLORS.SU.HYPERPARAM}] "
+                    f"(cutoff blocks = factor × tempo ÷ 1000). Set "
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff_factor[/{COLORS.SU.HYPERPARAM}] "
+                    f"instead (per-mille units; 1000 = one full tempo)."
+                )
+            return False
+
         if param_name == "subnet_is_active":
             err_msg = (
                 "subnet_is_active is set by using the 'btcli subnets start' command, "
