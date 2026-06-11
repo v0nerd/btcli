@@ -7467,16 +7467,13 @@ class CLIManager:
                 "not via sudo set"
             )
             if json_output:
-                json_str = json.dumps(
-                    {
+                json_console.print_json(
+                    data={
                         "success": False,
                         "err_msg": err_msg,
                         "extrinsic_identifier": None,
-                    },
-                    ensure_ascii=True,
+                    }
                 )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
             else:
                 print_error(
                     f"[{COLORS.SU.HYPERPARAM}]subnet_is_active[/{COLORS.SU.HYPERPARAM}] "
@@ -7511,60 +7508,29 @@ class CLIManager:
             f"param_name: {param_name}\n"
             f"param_value: {param_value}"
         )
-        if json_output:
-            try:
-                result, err_msg, ext_id = self._run_command(
-                    sudo.sudo_set_hyperparameter(
-                        wallet=wallet,
-                        subtensor=self.initialize_chain(network),
-                        netuid=netuid,
-                        proxy=proxy,
-                        param_name=param_name,
-                        param_value=param_value,
-                        normalize=normalize_value,
-                        prompt=prompt,
-                        json_output=json_output,
-                    )
-                )
-                json_str = json.dumps(
-                    {
-                        "success": result,
-                        "err_msg": err_msg,
-                        "extrinsic_identifier": ext_id,
-                    },
-                    ensure_ascii=True,
-                )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
-                return result
-            except Exception as e:
-                # Ensure JSON output even on exceptions
-                json_str = json.dumps(
-                    {
-                        "success": False,
-                        "err_msg": str(e),
-                        "extrinsic_identifier": None,
-                    },
-                    ensure_ascii=True,
-                )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
-                raise
-        else:
-            result, err_msg, ext_id = self._run_command(
-                sudo.sudo_set_hyperparameter(
-                    wallet=wallet,
-                    subtensor=self.initialize_chain(network),
-                    netuid=netuid,
-                    proxy=proxy,
-                    param_name=param_name,
-                    param_value=param_value,
-                    normalize=normalize_value,
-                    prompt=prompt,
-                    json_output=json_output,
-                )
+
+        result, err_msg, ext_id = self._run_command(
+            sudo.sudo_set_hyperparameter(
+                wallet=wallet,
+                subtensor=self.initialize_chain(network),
+                netuid=netuid,
+                proxy=proxy,
+                param_name=param_name,
+                param_value=param_value,
+                normalize=normalize_value,
+                prompt=prompt,
+                json_output=json_output,
             )
-            return result
+        )
+        if json_output:
+            json_console.print_json(
+                data={
+                    "success": result,
+                    "err_msg": err_msg,
+                    "extrinsic_identifier": ext_id,
+                }
+            )
+        return result
 
     def sudo_get(
         self,
