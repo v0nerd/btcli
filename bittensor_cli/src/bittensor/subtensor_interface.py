@@ -113,12 +113,14 @@ class SubtensorInterface:
             if (use_disk_cache or os.getenv("DISK_CACHE", "1") == "1")
             else AsyncSubstrateInterface
         )
-        self.substrate = substrate_class(
-            url=self.chain_endpoint,
-            ss58_format=SS58_FORMAT,
-            type_registry=TYPE_REGISTRY,
-            chain_name="Bittensor",
-            ws_shutdown_timer=None,
+        self.substrate: AsyncSubstrateInterface | DiskCachedAsyncSubstrateInterface = (
+            substrate_class(
+                url=self.chain_endpoint,
+                ss58_format=SS58_FORMAT,
+                type_registry=TYPE_REGISTRY,
+                chain_name="Bittensor",
+                ws_shutdown_timer=None,
+            )
         )
 
     def __str__(self):
