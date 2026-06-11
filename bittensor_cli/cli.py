@@ -1199,6 +1199,9 @@ class CLIManager:
             self.sudo_trim
         )
         self.sudo_app.command(
+            "trigger-epoch", rich_help_panel=HELP_PANELS["SUDO"]["CONFIG"]
+        )(self.sudo_trigger_epoch)
+        self.sudo_app.command(
             "stake-burn", rich_help_panel=HELP_PANELS["SUDO"]["CONFIG"]
         )(self.sudo_stake_burn)
 
@@ -7800,6 +7803,55 @@ class CLIManager:
                 wallet=wallet,
                 netuid=netuid,
                 max_n=max_uids,
+                period=period,
+                proxy=proxy,
+                json_output=json_output,
+                prompt=prompt,
+                decline=decline,
+                quiet=quiet,
+            )
+        )
+
+    def sudo_trigger_epoch(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        proxy: Optional[str] = Options.proxy,
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+        prompt: bool = Options.prompt,
+        decline: bool = Options.decline,
+        period: int = Options.period,
+    ):
+        """
+        Manually triggers an epoch for a subnet you own.
+
+        The epoch fires after the chain's admin freeze window has elapsed, during which
+        admin operations on the subnet are locked. This is rate-limited on-chain and
+        fails if a trigger is already pending or the next automatic epoch is imminent.
+
+        EXAMPLE
+        [green]$[/green] btcli sudo trigger-epoch --netuid 95 --wallet-name my_wallet --wallet-hotkey my_hotkey
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt)
+        proxy = self.is_valid_proxy_name_or_ss58(proxy, False)
+
+        wallet = self.wallet_ask(
+            wallet_name,
+            wallet_path,
+            wallet_hotkey,
+            ask_for=[WO.NAME, WO.PATH],
+            validate=WV.WALLET,
+        )
+        self._run_command(
+            sudo.trigger_epoch(
+                subtensor=self.initialize_chain(network),
+                wallet=wallet,
+                netuid=netuid,
                 period=period,
                 proxy=proxy,
                 json_output=json_output,

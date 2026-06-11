@@ -1626,3 +1626,102 @@ async def trim(
             await print_extrinsic_id(ext_receipt)
             print_success(f"[dark_sea_green3]{msg}[/dark_sea_green3]")
         return True
+
+
+async def trigger_epoch(
+    wallet: Wallet,
+    subtensor: "SubtensorInterface",
+    netuid: int,
+    proxy: Optional[str],
+    period: int,
+    prompt: bool,
+    decline: bool,
+    quiet: bool,
+    json_output: bool,
+) -> bool:
+    """
+    Manually triggers an epoch for a subnet owned by the wallet.
+
+    The epoch is scheduled to fire after the chain's admin freeze window, during
+    which admin operations on the subnet are locked. Rate-limited on-chain, and
+    rejected if a trigger is already pending or the next automatic epoch is
+    imminent.
+    """
+    coldkey_ss58 = proxy or wallet.coldkeypub.ss58_address
+    print_verbose("Confirming subnet owner")
+    block_hash = await subtensor.substrate.get_chain_head()
+    subnet_owner = await subtensor.query(
+        module="SubtensorModule",
+        storage_function="SubnetOwner",
+        params=[netuid],
+        block_hash=block_hash,
+    )
+    if subnet_owner != coldkey_ss58:
+        err_msg = "This wallet doesn't own the specified subnet."
+        if json_output:
+            json_console.print_json(data={"success": False, "message": err_msg})
+        else:
+            print_error(err_msg)
+        return False
+    if prompt and not json_output:
+        if not confirm_action(
+            f"You are about to manually trigger an epoch on SN{netuid}. "
+            f"This locks admin operations on the subnet until the epoch fires.",
+            default=False,
+            decline=decline,
+            quiet=quiet,
+        ):
+            print_error("User aborted.")
+            return False
+    call = await subtensor.substrate.compose_call(
+        call_module="SubtensorModule",
+        call_function="trigger_epoch",
+        call_params={"netuid": netuid},
+        block_hash=block_hash,
+    )
+    with console.status(
+        f":satellite: Triggering epoch on subnet "
+        f"[{COLOR_PALETTE.G.SUBHEAD}]{netuid}[/{COLOR_PALETTE.G.SUBHEAD}] ...",
+        spinner="earth",
+    ):
+        success, err_msg, ext_receipt = await subtensor.sign_and_send_extrinsic(
+            call=call, wallet=wallet, era={"period": period}, proxy=proxy
+        )
+    if not success:
+        if json_output:
+            json_console.print_json(
+                data={
+                    "success": False,
+                    "message": err_msg,
+                    "extrinsic_identifier": None,
+                }
+            )
+        else:
+            print_error(err_msg)
+        return False
+    else:
+        ext_id = await ext_receipt.get_extrinsic_identifier()
+        fires_at = None
+        try:
+            for event in await ext_receipt.triggered_events:
+                if event["event_id"] == "EpochTriggered":
+                    fires_at = event["attributes"]["fires_at"]
+        except KeyError:
+            # The trigger still succeeded; the fires_at block is just a nice-to-have.
+            pass
+        msg = f"Epoch triggered on SN{netuid}"
+        if fires_at is not None:
+            msg += f"; it will fire at block {fires_at} at the earliest"
+        if json_output:
+            json_console.print_json(
+                data={
+                    "success": True,
+                    "message": msg,
+                    "fires_at": fires_at,
+                    "extrinsic_identifier": ext_id,
+                }
+            )
+        else:
+            await print_extrinsic_id(ext_receipt)
+            print_success(f"[dark_sea_green3]{msg}[/dark_sea_green3]")
+        return True
