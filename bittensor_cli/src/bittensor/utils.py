@@ -854,6 +854,8 @@ def normalize_hyperparameters(
         "alpha_sigmoid_steepness": u16_normalized_float,
         "min_burn": Balance.from_rao,
         "max_burn": Balance.from_rao,
+        # Per-mille of tempo; normalized to the factor itself (1.0 = one full tempo).
+        "activity_cutoff_factor": lambda value: value / 1000,
     }
 
     normalized_values: list[tuple[str, str, str]] = []
