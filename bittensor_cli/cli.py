@@ -2586,6 +2586,11 @@ class CLIManager:
         self,
         wallet_name: Optional[str] = Options.wallet_name,
         wallet_path: str = Options.wallet_path,
+        coldkeys_only: bool = typer.Option(
+            False,
+            "--coldkeys-only",
+            help="List coldkeys only; omit hotkeys from the output.",
+        ),
         quiet: bool = Options.quiet,
         verbose: bool = Options.verbose,
         json_output: bool = Options.json_output,
@@ -2596,11 +2601,13 @@ class CLIManager:
         The output display shows each wallet and its associated `ss58` addresses for the coldkey public key and any hotkeys. The output is presented in a hierarchical tree format, with each wallet as a root node and any associated hotkeys as child nodes. The `ss58` address (or an `<ENCRYPTED>` marker, for encrypted hotkeys) is displayed for each coldkey and hotkey that exists on the device.
 
         Upon invocation, the command scans the wallet directory and prints a list of all the wallets, indicating whether the
-        public keys are available (`?` denotes unavailable or encrypted keys).
+        public keys are available (`?` denotes unavailable or encrypted keys). Coldkeys and hotkeys are listed in natural
+        sort order (e.g. coldkey2 before coldkey10).
 
         # EXAMPLE
 
         [green]$[/green] btcli wallet list --path ~/.bittensor
+        [green]$[/green] btcli w list --coldkeys-only
 
         [bold]NOTE[/bold]: This command is read-only and does not modify the filesystem or the blockchain state. It is intended for use with the Bittensor CLI to provide a quick overview of the user's wallets.
         """
@@ -2613,6 +2620,7 @@ class CLIManager:
                 wallet.path,
                 json_output,
                 wallet_name=wallet_name,
+                coldkeys_only=coldkeys_only,
             )
         )
 
