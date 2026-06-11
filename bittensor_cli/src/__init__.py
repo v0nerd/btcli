@@ -584,10 +584,10 @@ HYPERPARAMS = {
     "kappa": ("sudo_set_kappa", RootSudoOnly.TRUE),
     "immunity_period": ("sudo_set_immunity_period", RootSudoOnly.FALSE),
     "min_allowed_weights": ("sudo_set_min_allowed_weights", RootSudoOnly.FALSE),
-    "tempo": ("sudo_set_tempo", RootSudoOnly.TRUE),
+    "tempo": ("set_tempo", RootSudoOnly.COMPLICATED),
     "weights_version": ("sudo_set_weights_version_key", RootSudoOnly.FALSE),
     "weights_rate_limit": ("sudo_set_weights_set_rate_limit", RootSudoOnly.TRUE),
-    "activity_cutoff": ("sudo_set_activity_cutoff", RootSudoOnly.FALSE),
+    "activity_cutoff_factor": ("set_activity_cutoff_factor", RootSudoOnly.COMPLICATED),
     "target_regs_per_interval": (
         "sudo_set_target_registrations_per_interval",
         RootSudoOnly.TRUE,
@@ -635,6 +635,7 @@ HYPERPARAMS = {
     "alpha_low": ("", RootSudoOnly.FALSE),  # Derived from alpha_values
     #
     "subnet_is_active": ("", RootSudoOnly.FALSE),  # Set via btcli subnets start
+    "activity_cutoff": ("", RootSudoOnly.FALSE),  # Derived: activity_cutoff_factor × tempo / 1000
     "yuma_version": ("", RootSudoOnly.FALSE),  # Related to yuma3_enabled
     "max_allowed_uids": ("sudo_set_max_allowed_uids", RootSudoOnly.FALSE),
     "burn_increase_mult": ("sudo_set_burn_increase_mult", RootSudoOnly.FALSE),
