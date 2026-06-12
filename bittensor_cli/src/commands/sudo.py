@@ -1644,8 +1644,8 @@ async def trigger_epoch(
 
     The epoch is scheduled to fire after the chain's admin freeze window, during
     which admin operations on the subnet are locked. Rate-limited on-chain, and
-    rejected if a trigger is already pending or the next automatic epoch is
-    imminent.
+    rejected if a trigger is already pending, the next automatic epoch is
+    imminent, or commit-reveal is enabled on the subnet.
     """
     coldkey_ss58 = proxy or wallet.coldkeypub.ss58_address
     print_verbose("Confirming subnet owner")

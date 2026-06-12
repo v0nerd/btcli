@@ -7840,7 +7840,9 @@ class CLIManager:
 
         The epoch fires after the chain's admin freeze window has elapsed, during which
         admin operations on the subnet are locked. This is rate-limited on-chain and
-        fails if a trigger is already pending or the next automatic epoch is imminent.
+        fails if a trigger is already pending, the next automatic epoch is imminent, or
+        commit-reveal is enabled on the subnet (disable it first via
+        'btcli sudo set --param commit_reveal_weights_enabled --value false').
 
         EXAMPLE
         [green]$[/green] btcli sudo trigger-epoch --netuid 95 --wallet-name my_wallet --wallet-hotkey my_hotkey

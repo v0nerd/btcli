@@ -24,29 +24,31 @@ def test_trigger_epoch(local_chain, wallet_setup):
     keypair_bob, wallet_bob, wallet_path_bob, exec_command_bob = wallet_setup(
         wallet_path_bob
     )
+    print("Created keypairs")
 
-    # The owner-side trigger_epoch extrinsic only exists on dynamic-tempo runtimes.
-    try:
-        asyncio.run(
-            local_chain.compose_call(
+    # All direct substrate work must happen in a single asyncio.run: the websocket
+    # connection binds to the event loop that first uses it, so a second
+    # asyncio.run on the same local_chain object hangs forever.
+    async def _supports_trigger_epoch_and_unfreeze() -> bool:
+        # The owner-side trigger_epoch extrinsic only exists on dynamic-tempo
+        # runtimes.
+        try:
+            await local_chain.compose_call(
                 call_module="SubtensorModule",
                 call_function="trigger_epoch",
                 call_params={"netuid": netuid},
             )
-        )
-    except ValueError:
+        except ValueError:
+            return False
+        # With the freeze window on, a fresh subnet's next auto epoch can be close
+        # enough that trigger_epoch fails with AutoEpochAlreadyImminent.
+        await turn_off_hyperparam_freeze_window(local_chain, wallet_alice)
+        return True
+
+    if not asyncio.run(_supports_trigger_epoch_and_unfreeze()):
         pytest.skip(
             "Chain does not support SubtensorModule.trigger_epoch "
             "(pre-dynamic-tempo runtime)."
-        )
-
-    # With the freeze window on, a fresh subnet's next auto epoch can be close
-    # enough that trigger_epoch fails with AutoEpochAlreadyImminent.
-    try:
-        asyncio.run(turn_off_hyperparam_freeze_window(local_chain, wallet_alice))
-    except ValueError:
-        print(
-            "Skipping turning off hyperparams freeze window. This indicates the call does not exist on the chain you are testing."
         )
 
     # Register a subnet with sudo as Alice
@@ -86,6 +88,34 @@ def test_trigger_epoch(local_chain, wallet_setup):
     result_output = json.loads(result.stdout)
     assert result_output["success"] is True
     assert result_output["netuid"] == netuid
+
+    # The chain rejects trigger_epoch while commit-reveal is enabled
+    # (DynamicTempoBlockedByCommitReveal), and localnet subnets have it enabled
+    # by default — disable it first.
+    cmd = exec_command_alice(
+        command="sudo",
+        sub_command="set",
+        extra_args=[
+            "--wallet-path",
+            wallet_path_alice,
+            "--network",
+            "ws://127.0.0.1:9945",
+            "--wallet-name",
+            wallet_alice.name,
+            "--wallet-hotkey",
+            wallet_alice.hotkey_str,
+            "--netuid",
+            netuid,
+            "--json-out",
+            "--no-prompt",
+            "--param",
+            "commit_reveal_weights_enabled",
+            "--value",
+            "false",
+        ],
+    )
+    cmd_json = json.loads(cmd.stdout)
+    assert cmd_json["success"] is True, (cmd.stdout, cmd_json)
 
     # A non-owner cannot trigger an epoch
     cmd = exec_command_bob(
