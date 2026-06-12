@@ -1,5 +1,13 @@
 # Changelog
 
+## 9.22.2 /2026-06-11
+
+## What's Changed
+
+* Pins cyscale to 0.4.0 to avoid accidental upgrades which break RootClaimable queries
+
+**Full Changelog**: https://github.com/latent-to/bittensor/compare/v9.22.1...v9.22.2
+
 ## 9.22.1 /2026-06-03
 
 ## What's Changed
