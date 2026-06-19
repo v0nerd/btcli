@@ -1199,6 +1199,9 @@ class CLIManager:
             self.sudo_trim
         )
         self.sudo_app.command(
+            "trigger-epoch", rich_help_panel=HELP_PANELS["SUDO"]["CONFIG"]
+        )(self.sudo_trigger_epoch)
+        self.sudo_app.command(
             "stake-burn", rich_help_panel=HELP_PANELS["SUDO"]["CONFIG"]
         )(self.sudo_stake_burn)
 
@@ -7329,7 +7332,6 @@ class CLIManager:
             console.print("Available hyperparameters:\n")
 
             # Create a table to show hyperparameters with descriptions
-
             param_table = Table(
                 Column("[white]#", style="dim", width=4),
                 Column("[white]HYPERPARAMETER", style=COLORS.SU.HYPERPARAMETER),
@@ -7377,19 +7379,13 @@ class CLIManager:
                 description = metadata.get("description", "No description available.")
                 docs_link = metadata.get("docs_link", "")
                 if docs_link:
-                    # Show description text followed by clickable blue [link] at the end
                     console.print(
                         f"{description} [bright_blue underline link=https://{docs_link}]link[/]"
                     )
                 else:
                     console.print(f"{description}")
-                side_effects = metadata.get("side_effects", "")
-                if side_effects:
+                if side_effects := metadata.get("side_effects", ""):
                     console.print(f"[dim]Side Effects:[/dim] {side_effects}")
-                if docs_link:
-                    console.print(
-                        f"[dim]📚 Docs:[/dim] [link]https://{docs_link}[/link]\n"
-                    )
 
         if param_name in ["alpha_high", "alpha_low"]:
             if not prompt:
@@ -7398,16 +7394,13 @@ class CLIManager:
                     "They must be set together via the alpha_values parameter."
                 )
                 if json_output:
-                    json_str = json.dumps(
-                        {
+                    json_console.print_json(
+                        data={
                             "success": False,
                             "err_msg": err_msg,
                             "extrinsic_identifier": None,
-                        },
-                        ensure_ascii=True,
+                        }
                     )
-                    sys.stdout.write(json_str + "\n")
-                    sys.stdout.flush()
                 else:
                     print_error(
                         f"[{COLORS.SU.HYPERPARAM}]alpha_high[/{COLORS.SU.HYPERPARAM}] and "
@@ -7419,23 +7412,20 @@ class CLIManager:
             low_val = FloatPrompt.ask(f"Enter the new value for {arg__('alpha_low')}")
             high_val = FloatPrompt.ask(f"Enter the new value for {arg__('alpha_high')}")
             param_value = f"{low_val},{high_val}"
-        if param_name == "yuma_version":
+        elif param_name == "yuma_version":
             if not prompt:
                 err_msg = (
                     "yuma_version is set using a different hyperparameter (yuma3_enabled), "
                     "and thus cannot be set with `--no-prompt`"
                 )
                 if json_output:
-                    json_str = json.dumps(
-                        {
+                    json_console.print_json(
+                        data={
                             "success": False,
                             "err_msg": err_msg,
                             "extrinsic_identifier": None,
-                        },
-                        ensure_ascii=True,
+                        }
                     )
-                    sys.stdout.write(json_str + "\n")
-                    sys.stdout.flush()
                 else:
                     print_error(
                         f"[{COLORS.SU.HYPERPARAM}]yuma_version[/{COLORS.SU.HYPERPARAM}]"
@@ -7456,22 +7446,45 @@ class CLIManager:
                 param_value = "true" if question == "enable" else "false"
             else:
                 return False
+        elif param_name == "activity_cutoff":
+            err_msg = (
+                "activity_cutoff is now derived from activity_cutoff_factor "
+                "(cutoff blocks = factor × tempo ÷ 1000) and can no longer be set "
+                "directly. Set activity_cutoff_factor instead (per-mille units; "
+                "1000 = one full tempo)."
+            )
+            if json_output:
+                json_console.print_json(
+                    data={
+                        "success": False,
+                        "err_msg": err_msg,
+                        "extrinsic_identifier": None,
+                    }
+                )
+            else:
+                print_error(
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff[/{COLORS.SU.HYPERPARAM}] "
+                    f"is now derived from "
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff_factor[/{COLORS.SU.HYPERPARAM}] "
+                    f"(cutoff blocks = factor × tempo ÷ 1000). Set "
+                    f"[{COLORS.SU.HYPERPARAM}]activity_cutoff_factor[/{COLORS.SU.HYPERPARAM}] "
+                    f"instead (per-mille units; 1000 = one full tempo)."
+                )
+            return False
+
         if param_name == "subnet_is_active":
             err_msg = (
                 "subnet_is_active is set by using the 'btcli subnets start' command, "
                 "not via sudo set"
             )
             if json_output:
-                json_str = json.dumps(
-                    {
+                json_console.print_json(
+                    data={
                         "success": False,
                         "err_msg": err_msg,
                         "extrinsic_identifier": None,
-                    },
-                    ensure_ascii=True,
+                    }
                 )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
             else:
                 print_error(
                     f"[{COLORS.SU.HYPERPARAM}]subnet_is_active[/{COLORS.SU.HYPERPARAM}] "
@@ -7506,60 +7519,29 @@ class CLIManager:
             f"param_name: {param_name}\n"
             f"param_value: {param_value}"
         )
-        if json_output:
-            try:
-                result, err_msg, ext_id = self._run_command(
-                    sudo.sudo_set_hyperparameter(
-                        wallet=wallet,
-                        subtensor=self.initialize_chain(network),
-                        netuid=netuid,
-                        proxy=proxy,
-                        param_name=param_name,
-                        param_value=param_value,
-                        normalize=normalize_value,
-                        prompt=prompt,
-                        json_output=json_output,
-                    )
-                )
-                json_str = json.dumps(
-                    {
-                        "success": result,
-                        "err_msg": err_msg,
-                        "extrinsic_identifier": ext_id,
-                    },
-                    ensure_ascii=True,
-                )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
-                return result
-            except Exception as e:
-                # Ensure JSON output even on exceptions
-                json_str = json.dumps(
-                    {
-                        "success": False,
-                        "err_msg": str(e),
-                        "extrinsic_identifier": None,
-                    },
-                    ensure_ascii=True,
-                )
-                sys.stdout.write(json_str + "\n")
-                sys.stdout.flush()
-                raise
-        else:
-            result, err_msg, ext_id = self._run_command(
-                sudo.sudo_set_hyperparameter(
-                    wallet=wallet,
-                    subtensor=self.initialize_chain(network),
-                    netuid=netuid,
-                    proxy=proxy,
-                    param_name=param_name,
-                    param_value=param_value,
-                    normalize=normalize_value,
-                    prompt=prompt,
-                    json_output=json_output,
-                )
+
+        result, err_msg, ext_id = self._run_command(
+            sudo.sudo_set_hyperparameter(
+                wallet=wallet,
+                subtensor=self.initialize_chain(network),
+                netuid=netuid,
+                proxy=proxy,
+                param_name=param_name,
+                param_value=param_value,
+                normalize=normalize_value,
+                prompt=prompt,
+                json_output=json_output,
             )
-            return result
+        )
+        if json_output:
+            json_console.print_json(
+                data={
+                    "success": result,
+                    "err_msg": err_msg,
+                    "extrinsic_identifier": ext_id,
+                }
+            )
+        return result
 
     def sudo_get(
         self,
@@ -7829,6 +7811,57 @@ class CLIManager:
                 wallet=wallet,
                 netuid=netuid,
                 max_n=max_uids,
+                period=period,
+                proxy=proxy,
+                json_output=json_output,
+                prompt=prompt,
+                decline=decline,
+                quiet=quiet,
+            )
+        )
+
+    def sudo_trigger_epoch(
+        self,
+        network: Optional[list[str]] = Options.network,
+        wallet_name: Optional[str] = Options.wallet_name,
+        wallet_path: Optional[str] = Options.wallet_path,
+        wallet_hotkey: Optional[str] = Options.wallet_hotkey,
+        netuid: int = Options.netuid,
+        proxy: Optional[str] = Options.proxy,
+        quiet: bool = Options.quiet,
+        verbose: bool = Options.verbose,
+        json_output: bool = Options.json_output,
+        prompt: bool = Options.prompt,
+        decline: bool = Options.decline,
+        period: int = Options.period,
+    ):
+        """
+        Manually triggers an epoch for a subnet you own.
+
+        The epoch fires after the chain's admin freeze window has elapsed, during which
+        admin operations on the subnet are locked. This is rate-limited on-chain and
+        fails if a trigger is already pending, the next automatic epoch is imminent, or
+        commit-reveal is enabled on the subnet (disable it first via
+        'btcli sudo set --param commit_reveal_weights_enabled --value false').
+
+        EXAMPLE
+        [green]$[/green] btcli sudo trigger-epoch --netuid 95 --wallet-name my_wallet --wallet-hotkey my_hotkey
+        """
+        self.verbosity_handler(quiet, verbose, json_output, prompt)
+        proxy = self.is_valid_proxy_name_or_ss58(proxy, False)
+
+        wallet = self.wallet_ask(
+            wallet_name,
+            wallet_path,
+            wallet_hotkey,
+            ask_for=[WO.NAME, WO.PATH],
+            validate=WV.WALLET,
+        )
+        self._run_command(
+            sudo.trigger_epoch(
+                subtensor=self.initialize_chain(network),
+                wallet=wallet,
+                netuid=netuid,
                 period=period,
                 proxy=proxy,
                 json_output=json_output,
