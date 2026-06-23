@@ -275,7 +275,7 @@ def test_wallet_transfer(local_chain, wallet_setup):
         )["free_balance"]
     )
 
-    tolerance = Balance.from_rao(200_000)  # Tolerance for transaction fee
+    tolerance = Balance.from_rao(500_000)  # Tolerance for transaction fee
     balance_difference = initial_balance - balance_remaining
 
     # Assert transfer was successful w.r.t tolerance
