@@ -2705,7 +2705,7 @@ class SubtensorInterface:
         for idx, (_, result) in enumerate(batch_claimable):
             hotkey = unique_hotkeys[idx]
             if result:
-                for netuid, rate in result:
+                for netuid, rate in result.items():
                     if hotkey not in claimable_rates:
                         claimable_rates[hotkey] = {}
                     claimable_rates[hotkey][netuid] = fixed_to_float(rate, frac_bits=32)
