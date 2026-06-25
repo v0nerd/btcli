@@ -1,5 +1,12 @@
 # Changelog
 
+## 9.23.1 /2026-06-25
+
+## What's Changed
+* Update: Drand package by @ibraheem-abe in https://github.com/latent-to/btcli/pull/1022
+
+**Full Changelog**: https://github.com/latent-to/btcli/compare/v9.23.0...v9.23.1
+
 ## 9.23.0 /2026-06-25
 
 ## What's Changed
