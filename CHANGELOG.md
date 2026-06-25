@@ -18,6 +18,7 @@
 * Fix tests following #2773 Subtensor PR by @l0r1s in https://github.com/latent-to/btcli/pull/1011
 * Fix: Leftover migration to new cyscale version by @ibraheem-abe in https://github.com/latent-to/btcli/pull/1012
 * Update: Suitable period in-cases of negative  by @ibraheem-abe in https://github.com/latent-to/btcli/pull/1016
+* update sudo confirmation prompt by @chideraao in https://github.com/latent-to/btcli/pull/1018
 
 ## New Contributors
 * @kilyanni made their first contribution in https://github.com/latent-to/btcli/pull/997
