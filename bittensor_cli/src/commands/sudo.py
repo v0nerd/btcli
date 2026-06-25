@@ -710,7 +710,7 @@ async def set_hyperparameter_extrinsic(
             to_sudo_or_not_to_sudo = subnet_owner != coldkey_ss58
         else:
             to_sudo_or_not_to_sudo = confirm_action(
-                "This hyperparam can be executed as sudo or not. Do you want to execute as sudo [y] or not [n]?",
+                "This hyperparameter can be set by the subnet owner or by root via sudo. Execute as sudo?",
                 decline=decline,
                 quiet=quiet,
             )
