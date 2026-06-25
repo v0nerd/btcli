@@ -1,5 +1,32 @@
 # Changelog
 
+## 9.23.0 /2026-06-25
+
+## What's Changed
+* Fixes the symbol rendering in `s show` by @thewhaleking in https://github.com/latent-to/btcli/pull/990
+* Improve readability of subnets.py by @thewhaleking in https://github.com/latent-to/btcli/pull/991
+* New balancer by @thewhaleking in https://github.com/latent-to/btcli/pull/992
+* Backmerge main->staging by @thewhaleking in https://github.com/latent-to/btcli/pull/994
+* Update CONTRIBUTING by @thewhaleking in https://github.com/latent-to/btcli/pull/995
+* PR Guard Update by @thewhaleking in https://github.com/latent-to/btcli/pull/996
+* fix(pyproject): drop unused wheel dep by @kilyanni in https://github.com/latent-to/btcli/pull/997
+* feat(sudo): add min_childkey_take subnet hyperparameter by @wouterharinghuizen in https://github.com/latent-to/btcli/pull/993
+* feat(wallet): add --coldkeys-only and natural sort to wallet list by @wouterharinghuizen in https://github.com/latent-to/btcli/pull/999
+* Update for cyscale 0.5.0 by @thewhaleking in https://github.com/latent-to/btcli/pull/998
+* Backmerge/9.22.2 by @thewhaleking in https://github.com/latent-to/btcli/pull/1003
+* Update for configurable tempo and owner triggered epochs  by @thewhaleking in https://github.com/latent-to/btcli/pull/1000
+* Fix tests following #2773 Subtensor PR by @l0r1s in https://github.com/latent-to/btcli/pull/1011
+* Fix: Leftover migration to new cyscale version by @ibraheem-abe in https://github.com/latent-to/btcli/pull/1012
+* Update: Suitable period in-cases of negative  by @ibraheem-abe in https://github.com/latent-to/btcli/pull/1016
+* update sudo confirmation prompt by @chideraao in https://github.com/latent-to/btcli/pull/1018
+
+## New Contributors
+* @kilyanni made their first contribution in https://github.com/latent-to/btcli/pull/997
+* @wouterharinghuizen made their first contribution in https://github.com/latent-to/btcli/pull/993
+* @l0r1s made their first contribution in https://github.com/latent-to/btcli/pull/1011
+
+**Full Changelog**: https://github.com/latent-to/btcli/compare/v9.22.3...v9.23.0
+
 ## 9.22.2 /2026-06-11
 
 ## What's Changed
